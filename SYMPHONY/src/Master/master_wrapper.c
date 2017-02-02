@@ -694,6 +694,9 @@ int display_solution_u(sym_environment *env, int thread_num)
    }
    qsort_id(sol.xind, sol.xval, sol.xlength);
 
+   // TODO: Suresh: Remove following line and if 0-endif lines later
+   printf("\n");
+#if 0
 #ifdef USE_SYM_APPLICATION   
    user_res = user_display_solution(env->user, sol.lpetol, sol.xlength,
 				    sol.xind, sol.xval, sol.objval);
@@ -757,6 +760,7 @@ int display_solution_u(sym_environment *env, int thread_num)
 	  return(FUNCTION_TERMINATED_NORMALLY);
       }
    }
+#endif
    
    return(FUNCTION_TERMINATED_NORMALLY);
 }

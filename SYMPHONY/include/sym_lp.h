@@ -108,6 +108,7 @@ typedef struct LP_PROB{
    node_desc    *desc;
    int           bc_index;
    int           bc_level;
+   int           warmstart_leaf_node_ind; // Suresh
    int           vars_at_ub;
    int           vars_at_lb;
    int           vars_deletable; /* a subset of vars at LB */

@@ -216,6 +216,27 @@ int create_subproblem_u(lp_prob *p)
    p_mip = p->mip;
    tmp_mip = lp_data->mip;
 
+   // TODO: Suresh: confirm this! Zeroing cuts and bnd changes before warm start 
+   int orig_extrarowsind = 0, orig_extrarowssize = 0;
+   int orig_cutindind = 0, orig_cutindsize = 0;
+   int orig_bndchangeind = 0, orig_bndchangesize = 0;
+   if (p->tm->par.warm_start && p->warmstart_leaf_node_ind) {
+      if (orig_extrarowssize = p->desc->basis.extrarows.size) {
+         orig_extrarowsind = 1;
+         p->desc->basis.extrarows.size = 0;
+      }
+      if (orig_cutindsize = p->desc->cutind.size) {
+         orig_cutindind = 1;
+         p->desc->cutind.size = 0;
+      }
+      if (p->bc_index) {
+         if (p->desc->bnd_change && (orig_bndchangesize = p->desc->bnd_change->num_changes)) {
+            orig_bndchangeind = 1;
+            p->desc->bnd_change->num_changes = 0;
+         }
+      }
+   }
+
    lp_data->n = bvarnum + desc->uind.size;
    lp_data->m = bcutnum + desc->cutind.size;
 
@@ -291,6 +312,18 @@ int create_subproblem_u(lp_prob *p)
 	 printf("Illegal return code.\n");
 	 printf("Trying to use default user_create_subproblem without");
 	 printf("reading an MPS or AMPL file. Exiting...\n\n");
+
+    // TODO: Suresh: confirm this! Non-zeroing cuts and bnd changes
+    if (orig_extrarowsind) {
+       p->desc->basis.extrarows.size = orig_extrarowssize;
+    }
+    if (orig_cutindind) {
+       p->desc->cutind.size = orig_cutindsize;
+    }
+    if (orig_bndchangeind) {
+       p->desc->bnd_change->num_changes = orig_bndchangesize;
+    }
+
 	 return(ERROR__ILLEGAL_RETURN_CODE);
       }
 
@@ -423,12 +456,36 @@ int create_subproblem_u(lp_prob *p)
        
       /* Error. The search tree node will not be processed. */
       FREE(userind);
+
+      // TODO: Suresh: confirm this! Non-zeroing cuts and bnd changes
+      if (orig_extrarowsind) {
+          p->desc->basis.extrarows.size = orig_extrarowssize;
+      }
+      if (orig_cutindind) {
+        p->desc->cutind.size = orig_cutindsize;
+      }
+      if (orig_bndchangeind) {
+         p->desc->bnd_change->num_changes = orig_bndchangesize;
+      }
+
       return(ERROR__USER);
       
     default:
        
       /* Unexpected return value. Do something!! */
       FREE(userind);
+
+      // TODO: Suresh: confirm this! Non-zeroing cuts and bnd changes
+      if (orig_extrarowsind) {
+         p->desc->basis.extrarows.size = orig_extrarowssize;
+      }
+      if (orig_cutindind) {
+         p->desc->cutind.size = orig_cutindsize;
+      }
+      if (orig_bndchangeind) {
+         p->desc->bnd_change->num_changes = orig_bndchangesize;
+      }
+
       return(ERROR__USER);
    }
 
@@ -795,6 +852,15 @@ int create_subproblem_u(lp_prob *p)
       }
       load_basis(lp_data, cstat, rstat);
    }
+
+    // TODO: Suresh: confirm this! Non-zeroing only cuts since bnd changes are freed earlier
+    if (orig_extrarowsind) {
+       p->desc->basis.extrarows.size = orig_extrarowssize;
+    }
+    if (orig_cutindind) {
+       p->desc->cutind.size = orig_cutindsize;
+    }
+
    return(FUNCTION_TERMINATED_NORMALLY);
 }
 

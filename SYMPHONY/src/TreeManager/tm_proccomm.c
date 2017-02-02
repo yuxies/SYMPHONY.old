@@ -419,8 +419,15 @@ void send_active_node(tm_prob *tm, bc_node *node, int colgen_strat,
       bpath->sos_cnt = bobj->sos_cnt[j];
       bpath->sos_ind = bobj->sos_ind[j];
       
+      // TODO: Suresh: confirm this later!
       /* copy changes in variable bounds from each node above this node */
-      merge_bound_changes(&bnd_change, path[i]->desc.bnd_change);
+      if (!tm->par.warm_start) {
+         merge_bound_changes(&bnd_change, path[i]->desc.bnd_change);
+      } else {
+         if (!path[i]->warmstart_base_node_ind || path[i]->warmstart_leaf_node_ind) {
+            merge_bound_changes(&bnd_change, path[i]->desc.bnd_change);
+         }
+      }
       /*
       if (path[i]->desc.bnd_change) {
          printf("size = %d\n",path[i]->desc.bnd_change->num_changes);
@@ -498,6 +505,8 @@ void send_active_node(tm_prob *tm, bc_node *node, int colgen_strat,
    lp[thread_num]->lp_data->objval = node->lower_bound;
    lp[thread_num]->colgen_strategy = colgen_strat;
    lp[thread_num]->desc->bnd_change = bnd_change;
+   // TODO: Suresh: confirm this!
+   lp[thread_num]->warmstart_leaf_node_ind = node->warmstart_leaf_node_ind;
 
    lp[thread_num]->lp_stat.chain_cuts_trial_num = cuts_trial_num; 
 

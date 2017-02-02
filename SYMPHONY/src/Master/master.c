@@ -910,9 +910,8 @@ int sym_solve(sym_environment *env)
    }else{
       prob_type = env->mip->mip_inf->prob_type;
    }
-   if (prob_type == BINARY_TYPE || prob_type != BIN_CONT_TYPE ||
-      prob_type == BIN_INT_TYPE){
-      env->par.lp_par.cgl.gomory_globally_valid = TRUE;
+   if (prob_type == BINARY_TYPE || prob_type == BIN_CONT_TYPE) {
+      env->par.lp_par.cgl.gomory_globally_valid = FALSE;
    }
    
    if(termcode == PREP_INFEAS || termcode == PREP_UNBOUNDED ||
@@ -3694,8 +3693,9 @@ int sym_set_obj_coeff(sym_environment *env, int index, double value)
 
 int sym_set_obj2_coeff(sym_environment *env, int index, double value)
 {
-
-   if (!env->mip || index >= env->mip->n || index < 0 || !env->mip->obj2){
+   // Suresh: edited this for bicriteria to work
+   //if (!env->mip || index >= env->mip->n || index < 0 || !env->mip->obj2){
+   if (!env->mip || index >= env->mip->n || index < 0){
       if(env->par.verbosity >= 1){
 	 printf("sym_set_obj_coeff():There is no loaded mip description or\n");
 	 printf("index is out of range or no column description!\n");

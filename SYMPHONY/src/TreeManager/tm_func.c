@@ -3385,6 +3385,12 @@ int read_subtree(tm_prob *tm, bc_node *root, FILE *f)
       read_subtree(tm, root->children[i], f);
    }
 
+   // TODO: Suresh: move these later to appropriate function
+   if (!root->bobj.child_num) {
+      root->warmstart_leaf_node_ind = 1;
+   }
+   root->warmstart_base_node_ind = 1;
+
    return(parent);
 }
 			 

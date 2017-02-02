@@ -359,6 +359,8 @@ int resolve_node(sym_environment *env, bc_node *node)
    \*----------------------------------------------------------------------- */
    desc = new_desc;
 
+   // TODO: Suresh: confirm if we do not want cuts HERE?
+#if 0
    if (desc->cutind.size > 0){
       size = desc->cutind.size;
       sense  = (char*) malloc(size*CSIZE);
@@ -377,6 +379,8 @@ int resolve_node(sym_environment *env, bc_node *node)
 	    }
 	 }
       }
+      // Suresh: added this since nzcnt is wrong for following memory allocations
+      nzcnt = matbeg[j]
 
       matind = (int *) malloc(nzcnt*ISIZE);
       matval = (double *) malloc(nzcnt*DSIZE);
@@ -386,17 +390,19 @@ int resolve_node(sym_environment *env, bc_node *node)
 	    if (i == desc->cutind.list[j]){
 	       cut = env->warm_start->cuts[i];
 	       nzcnt = matbeg[j+1] - matbeg[j];
-	       memcpy(matind + matbeg[j], (int *) (cut->coef + ISIZE), 
-		      ISIZE * nzcnt);
+          // TODO: Suresh: fixed error in following two mempcpy commands
 	       memcpy(matval + matbeg[j], 
-		      (double *) (cut->coef + (1 + nzcnt) * ISIZE), 
+		      (double *) (cut->coef + DSIZE), 
 		      DSIZE * nzcnt);
+	       memcpy(matind + matbeg[j], (int *) (cut->coef + (1 + nzcnt) * DSIZE), 
+		      ISIZE * nzcnt);
 	    }
 	 }
       }
       nzcnt = matbeg[j];
       add_rows(lp_data, size, nzcnt, rhs, sense, matbeg, matind, matval);
    }
+#endif
 
    /*----------------------------------------------------------------------- */
    /* Load The Basis */
@@ -420,7 +426,10 @@ int resolve_node(sym_environment *env, bc_node *node)
       }else if (desc->basis.baserows.size == 0){
 	 rstat = desc->basis.extrarows.stat;
       }else{ /* neither is zero */
-	 rstat = lp_data->tmp.i2; /* m */
+         // TODO: Suresh: Confirm this as well as add a fix to FREE memory
+         // Suresh: observed a seg-fault error due to tmp memory; yet to debug this!
+//	 rstat = lp_data->tmp.i2; /* m */
+         rstat = (int *) calloc(desc->basis.baserows.size + desc->basis.extrarows.size, ISIZE);
 	 memcpy(rstat,
 		desc->basis.baserows.stat, desc->basis.baserows.size *ISIZE);
 	 memcpy(rstat + desc->basis.baserows.size,
@@ -569,8 +578,8 @@ int resolve_node(sym_environment *env, bc_node *node)
 int update_tree_bound(sym_environment *env, bc_node *root, int *cut_num,
 		      int *cuts_ind, char *cru_vars, int change_type)
 {
-
-   int i, resolve = 1;
+// TODO: Suresh: changed resolve from 1 to 0. Change back later!
+   int i, resolve = 0;
    char deletable = TRUE;   
 
    if (root){

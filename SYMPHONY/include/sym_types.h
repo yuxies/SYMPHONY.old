@@ -432,6 +432,9 @@ typedef struct BC_NODE{
    int         num_fp_calls_in_path;
    int         frac_cnt;
    double      frac_avg; 
+
+   int         warmstart_leaf_node_ind;    /* Suresh: indicator if leaf node for warm start */
+   int         warmstart_base_node_ind;    /* Suresh: indicator if base node for warm start */
 }bc_node;
 
 /*===========================================================================*\
