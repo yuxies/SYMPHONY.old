@@ -586,3 +586,8 @@
 #define FR_SEARCH                0
 #define RINS_SEARCH              1 
 
+
+// Suresh
+/*--------------- types of warm-starting ----------------------------------*/
+#define FROM_EXISTING_TREE	0
+#define FROM_SCRATCH		1

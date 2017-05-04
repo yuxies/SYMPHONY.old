@@ -982,6 +982,7 @@ int start_node(tm_prob *tm, int thread_num)
 		       best_node->bc_index, best_node->bc_level);
 		printf("++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 	     }
+             tm->stat.leaves++;	//Suresh
 	     if (tm->par.keep_description_of_pruned == KEEP_ON_DISK_VBC_TOOL ||
 		 tm->par.keep_description_of_pruned == KEEP_ON_DISK_FULL ||
 		 tm->par.keep_description_of_pruned == DISCARD){
@@ -1442,6 +1443,7 @@ int generate_children(tm_prob *tm, bc_node *node, branch_obj *bobj,
 		   child->bc_index, child->bc_level);
 	    printf("++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 	 }
+         tm->stat.leaves++;	//Suresh
 
 	 child->node_status = NODE_STATUS__PRUNED;
 
@@ -2234,6 +2236,7 @@ void install_new_ub(tm_prob *tm, double new_ub, int opt_thread_num,
 		      node->bc_index, node->bc_level);
 	       printf("+++++++++++++++++++++++++++++++++++++++++++++++++++\n");
 	    }
+            tm->stat.leaves++;	//Suresh
 	    if (tm->par.keep_description_of_pruned == DISCARD ||
 		tm->par.keep_description_of_pruned ==
 		KEEP_ON_DISK_VBC_TOOL){

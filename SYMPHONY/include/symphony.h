@@ -248,6 +248,11 @@ int sym_get_row_upper PROTO((sym_environment *env, double *rowub));
 int sym_get_obj_coeff PROTO((sym_environment *env, double *obj));
 int sym_get_obj2_coeff PROTO((sym_environment *env, double *obj2));
 int sym_get_obj_sense PROTO((sym_environment *env, int *sense));
+//Suresh: added following three functions needed for warm start from scratch
+int sym_get_num_leaves PROTO((sym_environment *env, int *numleaves));
+int sym_get_leaf_depths PROTO((sym_environment *env, int *leafdepth));
+int sym_get_branchdesc_bounds PROTO((sym_environment *env, int *lbcnt,
+      int **lbind, double **lbval, int *ubcnt, int **ubind, double **ubval));
 
 int sym_is_continuous PROTO((sym_environment *env, int index, int *value));
 int sym_is_binary PROTO((sym_environment *env, int index, int *value));
@@ -308,6 +313,16 @@ int sym_get_str_param PROTO((sym_environment *env, const char *key, char **value
 int sym_get_dual_pruned PROTO((sym_environment *env,
 			       double** dual_pieces, int* num_pieces,
 			       int MAX_ALLOWABLE_NUM_PIECES));
+
+//Suresh
+int sym_get_coeff_for_new_rhs PROTO((sym_environment *env,
+				  int rhs_cnt, int *new_rhs_ind,
+				  double *new_rhs_val,
+				  int lb_cnt, int *new_lb_ind,
+				  double *new_lb_val,
+				  int ub_cnt, int *new_ub_ind,
+				  double *new_ub_val,
+				  double *lb_for_new_rhs));
 
 
 int sym_get_lb_for_new_rhs PROTO((sym_environment *env,

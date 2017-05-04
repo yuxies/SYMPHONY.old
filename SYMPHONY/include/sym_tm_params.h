@@ -56,6 +56,7 @@ typedef struct TM_PARAMS{
    int         vbc_emulation;
    char        vbc_emulation_file_name[MAX_FILE_NAME_LENGTH +1];
    int         warm_start;
+   int         warm_start_type; //Suresh
    int         warm_start_node_limit;
    int         warm_start_node_level;
    double      warm_start_node_level_ratio;

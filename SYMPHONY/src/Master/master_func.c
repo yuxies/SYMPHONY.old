@@ -569,8 +569,8 @@ int resolve_node(sym_environment *env, bc_node *node)
 int update_tree_bound(sym_environment *env, bc_node *root, int *cut_num,
 		      int *cuts_ind, char *cru_vars, int change_type)
 {
-
-   int i, resolve = 1;
+   // TODO: Suresh: roll this back later!
+   int i, resolve = 0;
    char deletable = TRUE;   
 
    if (root){
@@ -2262,6 +2262,12 @@ int set_param(sym_environment *env, char *line)
       READ_DBL_PAR(tm_par->warm_start_node_ratio);
       return(0);
    }
+   //Suresh
+   else if (strcmp(key, "warm_start_type") == 0 ||
+	    strcmp(key, "TM_warm_start_type") == 0){
+      READ_INT_PAR(tm_par->warm_start_type);
+      return(0);
+   }
    else if (strcmp(key, "vbc_emulation") == 0 ||
 	    strcmp(key, "TM_vbc_emulation") == 0){
       READ_INT_PAR(tm_par->vbc_emulation);
@@ -3528,7 +3534,7 @@ int set_param(sym_environment *env, char *line)
 
 warm_start_desc *create_copy_warm_start(warm_start_desc *ws)
 {
-   int i, num=0, allocated_cut_num = 0;
+   int i, j, num=0, allocated_cut_num = 0;
    warm_start_desc * ws_copy;
 
    if (!ws){
@@ -3563,6 +3569,23 @@ warm_start_desc *create_copy_warm_start(warm_start_desc *ws)
       memcpy(ws_copy->best_sol.xval, ws->best_sol.xval, 
 	     DSIZE * ws->best_sol.xlength);   
    }
+
+/*
+   //Suresh: copy duals related info partially that's required to warm start
+   //an instance from scratch (refer: warm_start1.c example file)
+   num = ws_copy->num_leaf_nodes;
+   if (num) {
+      ws_copy->leaf_depth = (int *) malloc(ISIZE * num);
+      memcpy(ws_copy->leaf_depth, ws->leaf_depth, ISIZE*num);
+      ws_copy->bpaths = (branch_desc **) malloc(sizeof(branch_desc *) * num);
+      for (i = 0; i < num; i++) {
+         ws_copy->bpaths[i] = (branch_desc *) malloc(sizeof(branch_desc) * ws_copy->leaf_depth[i]);
+         for (j = 0; j < ws_copy->leaf_depth[i]; j++) {
+            memcpy(ws_copy->bpaths[i][j], ws->bpaths[i][j], size(branch_desc));
+         }
+      }
+   }
+*/
 
    return(ws_copy);
 }
@@ -4249,7 +4272,7 @@ double get_lb_for_new_rhs(bc_node *node, MIPdesc *mip, branch_desc *bpath,
    }else if (node->feasibility_status == INFEASIBLE_PRUNED){
       
       node->B_IP = SYM_INFINITY;
-      retval = check_feasibility_new_rhs(node, mip, bpath,
+      retval = check_feasibility_new_rhs(level, mip, bpath,
 					 rhs_cnt,
 					 new_rhs_ind, new_rhs_val,
 					 lb_cnt,
@@ -4304,6 +4327,480 @@ double get_lb_for_new_rhs(bc_node *node, MIPdesc *mip, branch_desc *bpath,
 } 
 
 /*===========================================================================*/
+
+
+/*===========================================================================*/
+//Suresh
+double get_coeff_for_new_rhs(bc_node *node, MIPdesc *mip, branch_desc *bpath,
+			  int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+			  int lb_cnt, int *new_lb_ind, double *new_lb_val,
+			  int ub_cnt, int *new_ub_ind, double *new_ub_val)
+{
+#ifdef SENSITIVITY_ANALYSIS
+   int i, j, k,retval;
+   double min = SYM_INFINITY;
+   bc_node * child;
+   double objval = -SYM_INFINITY;
+   int level = node->bc_level;
+   branch_obj * bobj;
+   
+   if(!node){
+      printf("Warning: NULL pointer in get_coeff_for_new_rhs()\n");
+      return(-SYM_INFINITY);
+   }
+
+#if 0
+   bc_node **path, *n;
+   branch_desc *bpath ;
+
+   path = (bc_node **) malloc((2*(level+1)+BB_BUNCH)*sizeof(bc_node *));
+   bpath = (branch_desc *) malloc 
+      ((2*(level+1)+BB_BUNCH)*sizeof(branch_desc));
+
+   for (i = level, n = node; i >= 0; n = n->parent, i--)
+      path[i] = n;
+
+   for (i = 0; i < level; i++){
+      for (j = path[i]->bobj.child_num - 1; j >= 0; j--)
+	 if (path[i]->children[j] == path[i+1])
+	    break;
+      bobj = &path[i]->bobj;
+      bpath[i].type = bobj->type;
+      bpath[i].name = bobj->name;
+      bpath[i].sense = bobj->sense[j];
+      bpath[i].rhs = bobj->rhs[j];
+      bpath[i].range = bobj->range[j];
+      bpath[i].branch = bobj->branch[j];
+   }
+#else
+   if (level > 0){
+      for (j = node->parent->bobj.child_num - 1; j >= 0; j--)
+	 if (node->parent->children[j] == node)
+	    break;
+      
+      bobj = &(node->parent->bobj);
+      bpath[level-1].type = bobj->type;
+      bpath[level-1].name = bobj->name;
+      bpath[level-1].sense = bobj->sense[j];
+      bpath[level-1].rhs = bobj->rhs[j];
+      bpath[level-1].range = bobj->range[j];
+      bpath[level-1].branch = bobj->branch[j];
+   }
+#endif
+      
+   if(node->bobj.child_num == 0) {
+   //Start with the previous bound
+   if(node->feasibility_status == FEASIBLE_PRUNED ||
+      node->feasibility_status == OVER_UB_PRUNED) {
+      node->C_LP = node->lower_bound;
+      
+      //Modify
+      char sense;
+      for (i = 0; i < lb_cnt; i++){
+	 if (node->dj[new_lb_ind[i]] <= 0){
+	    continue;
+	 }
+	 for (j = 0; j < level; j++){
+	    if (bpath[j].type == BRANCHING_VARIABLE){
+	       k = bpath[j].name;   //assuming no extra vars!
+	       sense = bpath[j].sense;
+	       if (new_lb_ind[i] == k){
+		  if (new_lb_val[i] > bpath[j].rhs){
+		     if (sense == 'G'){
+			node->C_LP +=
+			   node->dj[k]*(new_lb_val[i] - bpath[j].rhs);
+			break;
+		     }else{
+			//New lower bound makes this node infeasible
+			return(node->C_LP = node->B_IP = SYM_INFINITY);
+		     }
+		  }
+		  //At this point, we don't need to continue the loop 
+		  //break;
+	       }
+	    }
+	 }
+	 if (j == level){
+	    //This means we did not branch on new_lb_ind[i], so we adjust as usual
+	    node->C_LP += node->dj[new_lb_ind[i]] *
+	       (new_lb_val[i]- mip->lb[new_lb_ind[i]]);
+	 }
+      }
+      for (i = 0; i < ub_cnt; i++){
+	 if (node->dj[new_ub_ind[i]] >= 0){
+	    continue;
+	 }
+	 for (j = 0; j < level; j++){
+	    if (bpath[j].type == BRANCHING_VARIABLE){
+	       k = bpath[j].name;   //assuming no extra vars!
+	       sense = bpath[j].sense;
+	       if (new_ub_ind[i] == k){
+		  if (new_ub_val[i] < bpath[j].rhs){
+		     if (sense == 'L'){
+			node->C_LP +=
+			   node->dj[k]*(new_ub_val[i] - bpath[j].rhs);
+			break;
+		     }else{
+			//New lower bound makes this node infeasible
+			return(node->C_LP = node->B_IP = SYM_INFINITY);
+		     }
+		  }
+		  //At this point, we don't need to continue the loop 
+		  //break;
+	       }
+	    }
+	 }
+	 if (j == level){
+	    //This means we did not branch on new_ub_ind[i], so we adjust as usual
+	    node->C_LP += node->dj[new_ub_ind[i]] *
+	       (new_ub_val[i]- mip->ub[new_ub_ind[i]]);
+	 }
+      }
+      for (i = 0; i < rhs_cnt; i++){
+	 node->C_LP += node->duals[new_rhs_ind[i]]*
+	    (new_rhs_val[i] - mip->rhs[new_rhs_ind[i]]);
+      }
+      node->B_IP = node->C_LP;
+   }else if (node->feasibility_status == INFEASIBLE_PRUNED){
+      
+      node->B_IP = SYM_INFINITY;
+      retval = check_feasibility_new_rhs(level, mip, bpath,
+					 rhs_cnt,
+					 new_rhs_ind, new_rhs_val,
+					 lb_cnt,
+					 new_lb_ind, new_lb_val,
+					 ub_cnt,
+					 new_ub_ind, new_ub_val,
+					 &objval);
+      if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
+	 retval == LP_D_ITLIM){
+	 node->B_IP = objval;
+      }else{
+	 node->B_IP = SYM_INFINITY;
+      }
+   }else {
+      printf("get_coeff_for_new_rhs(): Unknown feasiblility status!\n");
+      exit(1);
+   }
+
+   } else {
+   for (i = 0; i < node->bobj.child_num; i++){
+      
+      child = node->children[i];
+      
+      child->B_IP = get_coeff_for_new_rhs(child, mip, bpath,
+				       rhs_cnt, new_rhs_ind, new_rhs_val,
+				       lb_cnt, new_lb_ind, new_lb_val,
+				       ub_cnt, new_ub_ind, new_ub_val); 
+      
+      if(child->B_IP < min){
+	 min = child->B_IP;
+      }
+   }
+   return min;
+
+   }
+   return node->B_IP;
+
+#else
+
+   printf("get_coeff_for_new_rhs():\n");
+   printf("Sensitivity analysis features are not enabled.\n"); 
+   printf("Please rebuild SYMPHONY with these features enabled\n");
+   return(-SYM_INFINITY);
+
+#endif
+}
+
+/*===========================================================================*/
+
+
+/*===========================================================================*/
+//Suresh
+double get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
+			  int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+			  int lb_cnt, int *new_lb_ind, double *new_lb_val,
+			  int ub_cnt, int *new_ub_ind, double *new_ub_val)
+{
+#ifdef SENSITIVITY_ANALYSIS
+   if(!ws){
+      printf("Warning: NULL pointer in get_coeff_from_dual_data()\n");
+      return(-SYM_INFINITY);
+   }
+
+   int i, j, k, name, retval;
+   int num_leaf_nodes = ws->num_leaf_nodes;
+   double coeff = -SYM_INFINITY, objval = -SYM_INFINITY;
+   double *bound = (double *) malloc(DSIZE * num_leaf_nodes);
+   double **duals = ws->duals;
+   double **djs = ws->djs;
+   branch_desc **bpaths = ws->bpaths;
+   int *leaf_depth = ws->leaf_depth;
+   int *feasibility_status = ws->feasibility_status;
+   double *lower_bound = ws->lower_bound;
+
+   for (k = 0; k < num_leaf_nodes; k++) {
+      if(feasibility_status[k] == FEASIBLE_PRUNED ||
+            feasibility_status[k] == OVER_UB_PRUNED ||
+               feasibility_status[k] == NODE_BRANCHED_ON ||
+                  //TODO: Suresh: confirm this ROOT_NODE if condition
+                  feasibility_status[k] == ROOT_NODE) {
+         bound[k] = lower_bound[k];
+
+         //Modify
+         char sense;
+         int inf_ind = 0;
+         for (i = 0; i < lb_cnt; i++){
+            if (djs[k][new_lb_ind[i]] <= 0){
+               continue;
+            }
+            for (j = 0; j < leaf_depth[k]; j++){
+               if (bpaths[k][j].type == BRANCHING_VARIABLE){
+                  name = bpaths[k][j].name;   //assuming no extra vars!
+                  sense = bpaths[k][j].sense;
+                  if (new_lb_ind[i] == name){
+                     if (new_lb_val[i] > bpaths[k][j].rhs){
+                        if (sense == 'G'){
+                           bound[k] +=
+                              djs[k][name]*(new_lb_val[i] - bpaths[k][j].rhs);
+                           break;
+                        }else{
+                           //New lower bound makes this node infeasible
+                           bound[k] = SYM_INFINITY;
+                           inf_ind = 1;
+                        }
+                     }
+                  }
+               }
+            }
+            if (j == leaf_depth[k]){
+               //This means we did not branch on new_lb_ind[i], so we adjust as usual
+               bound[k] += djs[k][new_lb_ind[i]] *
+                  (new_lb_val[i]- mip->lb[new_lb_ind[i]]);
+            }
+         }
+         if (!inf_ind) {
+            for (i = 0; i < ub_cnt; i++){
+               if (djs[k][new_ub_ind[i]] >= 0){
+                  continue;
+               }
+               for (j = 0; j < leaf_depth[k]; j++){
+                  if (bpaths[k][j].type == BRANCHING_VARIABLE){
+                     name = bpaths[k][j].name;   //assuming no extra vars!
+                     sense = bpaths[k][j].sense;
+                     if (new_ub_ind[i] == name){
+                        if (new_ub_val[i] < bpaths[k][j].rhs){
+                           if (sense == 'L'){
+                              bound[k] +=
+                                 djs[k][name]*(new_ub_val[i] - bpaths[k][j].rhs);
+                              break;
+                           }else{
+                              //New lower bound makes this node infeasible
+                              bound[k] = SYM_INFINITY;
+                              inf_ind = 1;
+                           }
+                        }
+                     }
+                  }
+               }
+               if (j == leaf_depth[k]){
+                  //This means we did not branch on new_ub_ind[i], so we adjust as usual
+                  bound[k] += djs[k][new_ub_ind[i]] *
+                     (new_ub_val[i]- mip->ub[new_ub_ind[i]]);
+               }
+            }
+         }
+         if (!inf_ind) {
+            for (i = 0; i < rhs_cnt; i++){
+               bound[k] += duals[k][new_rhs_ind[i]]*
+                  (new_rhs_val[i] - mip->rhs[new_rhs_ind[i]]);
+            }
+         }
+      }else if (feasibility_status[k] == INFEASIBLE_PRUNED){
+         bound[k] = SYM_INFINITY;
+         retval = check_feasibility_new_rhs(leaf_depth[k], mip, bpaths[k],
+               rhs_cnt, new_rhs_ind, new_rhs_val,
+               lb_cnt, new_lb_ind, new_lb_val,
+               ub_cnt, new_ub_ind, new_ub_val, &objval);
+         if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
+               retval == LP_D_ITLIM){
+            bound[k] = objval;
+         }
+      } else {
+         printf("get_coeff_from_dual_data(): Unknown feasiblility status = %d!\n", feasibility_status[k]);
+         exit(1);
+      }
+      if (coeff < bound[k]) {
+         coeff = bound[k];
+      }
+   }
+     
+   return coeff;
+
+#else
+
+   printf("get_coeff_from_dual_data():\n");
+   printf("Sensitivity analysis features are not enabled.\n"); 
+   printf("Please rebuild SYMPHONY with these features enabled\n");
+   return(-SYM_INFINITY);
+
+#endif
+}
+
+/*===========================================================================*/
+
+
+/*===========================================================================*/
+//Suresh
+int collect_aux_data(warm_start_desc *ws, int num_rows, int num_cols, 
+			int sensitivity_rhs, int sensitivity_bounds)
+{
+#ifdef SENSITIVITY_ANALYSIS
+    if(!ws){
+      printf("Warning: NULL pointer in collect_aux_data()\n");
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }  
+
+   //find number of leaf nodes at first
+   ws->num_leaf_nodes = get_num_leaf_nodes(ws->rootnode);
+
+   //Suresh: following doesn't work if terminating conditions are imposed
+//   assert(ws->num_leaf_nodes == ws->stat.leaves);
+
+   //various memory allocations
+   //TODO: if conditions on sens_rhs and sens_bounds required here?
+   ws->duals = (double **) malloc(sizeof(double *) * ws->num_leaf_nodes);
+   ws->djs = (double **) malloc(sizeof(double *) * ws->num_leaf_nodes);
+   ws->bpaths = (branch_desc **) malloc(sizeof(branch_desc *) * ws->num_leaf_nodes);
+   ws->leaf_depth = (int *) malloc(ISIZE * ws->num_leaf_nodes);
+   ws->feasibility_status = (int *) malloc(ISIZE * ws->num_leaf_nodes);
+   ws->lower_bound = (double *) malloc(DSIZE * ws->num_leaf_nodes);
+
+   //max_depth allocation for temporary bpath
+   branch_desc *bpath = (branch_desc *) malloc(ws->stat.max_depth *
+			      sizeof(branch_desc));
+   int leaf_num;
+   leaf_num = 0;
+
+   if (sensitivity_rhs || sensitivity_bounds) {
+      //get various data
+      get_leaf_node_data(ws->rootnode, bpath, ws->bpaths, ws->leaf_depth, &leaf_num,
+   			ws->duals, ws->djs, ws->feasibility_status, ws->lower_bound, num_rows, num_cols,
+			sensitivity_rhs, sensitivity_bounds);
+
+      //assert that indeed all leaf nodes data is obtained
+      assert(ws->num_leaf_nodes == leaf_num);
+      FREE(bpath);
+   } else if (!sensitivity_rhs && !sensitivity_bounds) {
+      printf("collect_aux_data():\n");
+      printf("Neither sensitivity_rhs nor sensitivity_bounds is enabled.\n"); 
+      printf("Please rebuild SYMPHONY with these features enabled\n");
+      FREE(bpath);
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+#else
+
+   printf("collect_aux_data():\n");
+   printf("Sensitivity analysis features are not enabled.\n"); 
+   printf("Please rebuild SYMPHONY with these features enabled\n");
+   return(FUNCTION_TERMINATED_ABNORMALLY);
+
+#endif
+}
+
+/*===========================================================================*/
+
+
+/*===========================================================================*/
+//Suresh
+int get_num_leaf_nodes(bc_node *node)
+{
+   if (node == NULL) {
+      return 0;
+   } else if (!node->bobj.child_num) {
+      return 1;
+   } else if (node->bobj.child_num == 2) {
+      return (get_num_leaf_nodes(node->children[0]) + get_num_leaf_nodes(node->children[1]));
+   } else if (node->bobj.child_num == 1) {
+      return (get_num_leaf_nodes(node->children[0]));
+   } else {
+      printf("Warning: Error from get_num_leaf_nodes()\n");
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+}
+
+/*===========================================================================*/
+
+
+/*===========================================================================*/
+//Suresh
+int get_leaf_node_data(bc_node *node, branch_desc *bpath, branch_desc **bpaths, 
+				int *leaf_depth, int *leaf_num, double **duals, 
+				double **djs, int *feasibility_status, double *lower_bound, int num_rows,
+				int num_cols, int sensitivity_rhs, int sensitivity_bounds)
+{
+   if (node == NULL) {
+      printf("Warning: NULL pointer in get_leaf_node_data()\n");
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+
+   int level = node->bc_level, j, child_num = node->bobj.child_num;
+   branch_obj *bobj;
+
+   //if level>0, save the branching constraint
+   if (sensitivity_bounds && level > 0) {
+      for (j = node->parent->bobj.child_num - 1; j >= 0; j--)
+	 if (node->parent->children[j] == node)
+	    break;
+      
+      bobj = &(node->parent->bobj);
+      bpath[level-1].type = bobj->type;
+      bpath[level-1].name = bobj->name;
+      bpath[level-1].sense = bobj->sense[j];
+      bpath[level-1].rhs = bobj->rhs[j];
+      bpath[level-1].range = bobj->range[j];
+      bpath[level-1].branch = bobj->branch[j];
+   }
+
+   //if child_num>0, then do recursion on child nodes
+   for (j = 0; j < child_num; j++)
+      get_leaf_node_data(node->children[j], bpath, bpaths, leaf_depth, leaf_num, 
+				duals, djs, feasibility_status, lower_bound, num_rows, num_cols,
+				sensitivity_rhs, sensitivity_bounds);
+
+   //if child_num=0, then copy various data
+   if (!child_num) {
+      //allocate memory and save duals and reduced costs
+      if (sensitivity_rhs) {
+         duals[*leaf_num] = (double *) malloc(DSIZE * num_rows);
+         memcpy(duals[*leaf_num], node->duals, DSIZE*num_rows);
+      }
+      if (sensitivity_bounds) {
+         djs[*leaf_num] = (double *) malloc(DSIZE * num_cols);
+         memcpy(djs[*leaf_num], node->dj, DSIZE*num_cols);
+
+         if (level == 0) {
+            assert(*leaf_num == 0);
+            bpath = NULL;
+            bpaths[*leaf_num] = NULL;
+         } else {
+            bpaths[*leaf_num] = (branch_desc *) malloc(sizeof(branch_desc) * level);
+            memcpy(bpaths[*leaf_num], bpath, sizeof(branch_desc)*level);
+         }
+      }
+      leaf_depth[*leaf_num] = level;
+      feasibility_status[*leaf_num] = node->feasibility_status;
+      lower_bound[*leaf_num] = node->lower_bound;
+      *leaf_num = *leaf_num + 1;
+   }
+
+   return (FUNCTION_TERMINATED_NORMALLY);
+}
+
+
+/*===========================================================================*/
+
+
 /*===========================================================================*/
 
 double get_ub_for_new_obj(bc_node *root, MIPdesc *mip, int cnt, 
@@ -4493,7 +4990,7 @@ double get_ub_for_new_rhs(bc_node *root, MIPdesc *mip, int cnt,
 /*===========================================================================*/
 /*===========================================================================*/
 
-double check_feasibility_new_rhs(bc_node *node, MIPdesc *mip, branch_desc *bpath,
+int check_feasibility_new_rhs(int level, MIPdesc *mip, branch_desc *bpath,
 				 int rhs_cnt,
 				 int *new_rhs_ind, double *new_rhs_val,
 				 int lb_cnt,
@@ -4504,7 +5001,6 @@ double check_feasibility_new_rhs(bc_node *node, MIPdesc *mip, branch_desc *bpath
 {
 #ifdef SENSITIVITY_ANALYSIS
    int i, j;
-   int level = node->bc_level;
    branch_obj * bobj;
    int retval, iterd;
    LPdata * lp_data;
@@ -4631,6 +5127,7 @@ char check_solution(sym_environment *env, lp_sol *sol, double *colsol)
    sol->objval = 0;
    /* step 1. check for bounds and integrality */   
    for (i = env->mip->n - 1; i >= 0; i--){
+      sol->objval += tmp_sol[i]*obj[i];
       if (tmp_sol[i] < env->mip->lb[i] - lpetol || 
 	  tmp_sol[i] > env->mip->ub[i] + lpetol)
 	 break;
@@ -4642,7 +5139,6 @@ char check_solution(sym_environment *env, lp_sol *sol, double *colsol)
 	  ceil(tmp_sol[i])-tmp_sol[i] > lpetol){
 	 break;  
       }
-      sol->objval += tmp_sol[i]*obj[i];
    }
 
    feasible = i < 0 ? true : false;

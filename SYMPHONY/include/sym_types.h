@@ -462,6 +462,11 @@ typedef struct PROBLEM_STAT{
 				      repricing */
    double      max_vsize;
    int         print_stats_cnt; 
+
+   //Suresh
+   int         leaves;             /* the number of leaf nodes in the final
+				      branch-and-bound tree to be used for
+				      warm-starting from scratch */
 }problem_stat;
 
 /*===========================================================================*/
@@ -922,6 +927,14 @@ typedef struct WARM_START_DESC{
    char           trim_tree;
    int            trim_tree_level;
    int            trim_tree_index;
+   //Suresh
+   int		      num_leaf_nodes;
+   double       **duals; 		         //size=num_leaf_nodes
+   double	    **djs;			         //size=num_leaf_nodes
+   branch_desc  **bpaths; 		         //size=num_leaf_nodes
+   int		     *leaf_depth;		      //size=num_leaf_nodes
+   int		     *feasibility_status;	//size=num_leaf_nodes
+   double        *lower_bound;        //size=num_leaf_nodes
 }warm_start_desc;
 
 /*===========================================================================*/

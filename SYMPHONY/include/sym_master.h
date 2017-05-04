@@ -154,6 +154,33 @@ sym_environment *create_copy_environment PROTO((sym_environment *env));
 void get_dual_pruned PROTO((bc_node *root, MIPdesc *mip,
 			       double ** dual_pieces, int *num_pieces,
 			       int MAX_ALLOWABLE_NUM_PIECES));
+//Suresh
+double get_coeff_for_new_rhs PROTO((bc_node *node, MIPdesc *mip, branch_desc *bpath,
+				 int rhs_cnt, int *new_rhs_ind,
+				 double *new_rhs_val,
+				 int lb_cnt, int *new_lb_ind,
+				 double *new_lb_val,
+				 int ub_cnt, int *new_ub_ind,
+				 double *new_ub_val));
+//Suresh
+double get_coeff_from_dual_data PROTO((warm_start_desc *ws, MIPdesc *mip,
+				 int rhs_cnt, int *new_rhs_ind,
+				 double *new_rhs_val,
+				 int lb_cnt, int *new_lb_ind,
+				 double *new_lb_val,
+				 int ub_cnt, int *new_ub_ind,
+				 double *new_ub_val));
+//Suresh
+int collect_aux_data PROTO((warm_start_desc *ws, int num_rows, int num_cols,
+				int sensitivity_rhs, int sensitivity_bounds));
+//Suresh
+int get_num_leaf_nodes PROTO((bc_node *node));
+//Suresh
+int get_leaf_node_data PROTO((bc_node *node, branch_desc *bpath, branch_desc **bpaths, 
+				int *leaf_depth, int *leaf_num, double **duals,
+				double **djs, int *feasibility_status, double *lower_bound, int num_rows,
+				int num_cols, int sensitivity_rhs, int sensitivity_bounds));
+
 double get_lb_for_new_rhs PROTO((bc_node *node, MIPdesc *mip, branch_desc *bpath,
 				 int rhs_cnt, int *new_rhs_ind,
 				 double *new_rhs_val,
@@ -169,7 +196,7 @@ double get_lb_for_new_obj PROTO((bc_node *root, MIPdesc *mip, int cnt,
 #endif
 double get_ub_for_new_obj PROTO((bc_node *root, MIPdesc *mip, int cnt, 
 				 int *ind, double *val));
-double check_feasibility_new_rhs PROTO((bc_node *node, MIPdesc *mip,
+int check_feasibility_new_rhs PROTO((int level, MIPdesc *mip,
 					branch_desc *bpath,
 					int rhs_cnt,
 					int *new_rhs_ind, double *new_rhs_val,
