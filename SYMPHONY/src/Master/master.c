@@ -3464,7 +3464,7 @@ int sym_get_branchdesc_bounds (sym_environment *env, int *lb_cnt,
          ub_ind[i] = NULL;
          ub_val[i] = NULL;
       }
-      printf("sym_get_branchdesc_bounds(): lb_cnt[%d]: %d, ub_cnt[%d]: %d\n", i, lb_cnt[i], i, ub_cnt[i]);
+//      printf("sym_get_branchdesc_bounds(): lb_cnt[%d]: %d, ub_cnt[%d]: %d\n", i, lb_cnt[i], i, ub_cnt[i]);
       counter_lb = 0;
       counter_ub = 0;
       for (j = 0; j < leaf_depth[i]; j++) {

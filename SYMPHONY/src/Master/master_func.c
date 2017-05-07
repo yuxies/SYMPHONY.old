@@ -4539,6 +4539,7 @@ double get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
    int *feasibility_status = ws->feasibility_status;
    double *lower_bound = ws->lower_bound;
 
+   /*
    for (k = 0; k < num_leaf_nodes; k++) {
       if(feasibility_status[k] == FEASIBLE_PRUNED ||
             feasibility_status[k] == OVER_UB_PRUNED ||
@@ -4619,6 +4620,43 @@ double get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
       }else if (feasibility_status[k] == INFEASIBLE_PRUNED){
          bound[k] = SYM_INFINITY;
          retval = check_feasibility_new_rhs(leaf_depth[k], mip, bpaths[k],
+               rhs_cnt, new_rhs_ind, new_rhs_val,
+               lb_cnt, new_lb_ind, new_lb_val,
+               ub_cnt, new_ub_ind, new_ub_val, &objval);
+         if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
+               retval == LP_D_ITLIM){
+            bound[k] = objval;
+         }
+      } else {
+         printf("get_coeff_from_dual_data(): Unknown feasiblility status = %d!\n", feasibility_status[k]);
+         exit(1);
+      }
+      if (coeff < bound[k]) {
+         coeff = bound[k];
+      }
+   }
+*/
+   for (k = 0; k < num_leaf_nodes; k++) {
+      if(feasibility_status[k] == FEASIBLE_PRUNED ||
+            feasibility_status[k] == OVER_UB_PRUNED ||
+               feasibility_status[k] == NODE_BRANCHED_ON ||
+                  //TODO: Suresh: confirm this ROOT_NODE if condition
+                  feasibility_status[k] == ROOT_NODE) {
+         bound[k] = 0;
+
+         //Modify
+         for (i = 0; i < lb_cnt; i++){
+            bound[k] += djs[k][new_lb_ind[i]] * new_lb_val[i];
+         }
+         for (i = 0; i < ub_cnt; i++){
+            bound[k] -= djs[k][new_ub_ind[i]] * new_ub_val[i];
+         }
+         for (i = 0; i < rhs_cnt; i++){
+            bound[k] += duals[k][new_rhs_ind[i]]* new_rhs_val[i];
+         }
+      }else if (feasibility_status[k] == INFEASIBLE_PRUNED){
+         bound[k] = SYM_INFINITY;
+         retval = check_feasibility_diff_rhs(leaf_depth[k], mip, bpaths[k],
                rhs_cnt, new_rhs_ind, new_rhs_val,
                lb_cnt, new_lb_ind, new_lb_val,
                ub_cnt, new_ub_ind, new_ub_val, &objval);
@@ -5029,7 +5067,8 @@ int check_feasibility_new_rhs(int level, MIPdesc *mip, branch_desc *bpath,
    change_rhs(lp_data, rhs_cnt, new_rhs_ind, new_rhs_val);
    for (i = 0; i < lb_cnt; i++){
       change_lbub(lp_data, new_lb_ind[i],
-		  new_lb_val[i], mip->lb[new_lb_ind[i]]);
+            //TODO: Suresh: confirm following mip->ub change!
+		  new_lb_val[i], mip->ub[new_lb_ind[i]]);
    }
    for (i = 0; i < ub_cnt; i++){
       change_lbub(lp_data, new_ub_ind[i],
@@ -5097,6 +5136,72 @@ int check_feasibility_new_rhs(int level, MIPdesc *mip, branch_desc *bpath,
 #else
    printf("check_feasibility_new_rhs():\n");
    printf("Sensitivity analysis features are not enabled.\n"); 
+   printf("Please rebuild SYMPHONY with these features enabled\n");
+   return(0);
+#endif
+}
+
+/*===========================================================================*/
+/*===========================================================================*/
+
+int check_feasibility_diff_rhs(int level, MIPdesc *mip, branch_desc *bpath,
+				 int rhs_cnt,
+				 int *new_rhs_ind, double *new_rhs_val,
+				 int lb_cnt,
+				 int *new_lb_ind, double *new_lb_val,
+				 int ub_cnt,
+				 int *new_ub_ind, double *new_ub_val,
+				 double *objval)
+{
+#ifdef SENSITIVITY_ANALYSIS
+   int i;
+   int retval, iterd;
+   LPdata * lp_data;
+
+   lp_data = (LPdata *) calloc (1, sizeof(LPdata));
+   lp_data->mip = mip;
+   lp_data->n = mip->n;
+   lp_data->m = mip->m;
+
+   //load_the problem
+
+   open_lp_solver(lp_data);
+   load_lp_prob(lp_data, 0, 0);
+
+   //change the rhs!
+   //FIXME! cange_rhs needs lp_data->tmp.c and lp_data->tmp.d???
+
+   lp_data->tmp.c = (char*) calloc(mip->m, CSIZE);
+   lp_data->tmp.d = (double*) calloc(mip->m, DSIZE);
+
+   change_rhs(lp_data, rhs_cnt, new_rhs_ind, new_rhs_val);
+
+   for (i = 0; i < lb_cnt; i++){
+      change_lbub(lp_data, new_lb_ind[i],
+		  new_lb_val[i], mip->ub[new_lb_ind[i]]);
+   }
+   for (i = 0; i < ub_cnt; i++){
+      change_lbub(lp_data, new_ub_ind[i],
+		  mip->lb[new_ub_ind[i]], new_ub_val[i]);
+   }
+
+   //see whether it is feasible!
+
+   size_lp_arrays(lp_data, FALSE, TRUE, mip->m, mip->n, mip->nz);
+   //get_slacks call crashes here, but we can turn it off by deallocating
+   FREE(lp_data->slacks);
+   if ((retval = dual_simplex(lp_data, &iterd)) == LP_OPTIMAL){
+      *objval = lp_data->objval;
+   }
+   close_lp_solver(lp_data);
+
+   lp_data->mip = NULL;
+   FREE(lp_data);
+
+   return (retval);
+#else
+   printf("check_feasibility_new_rhs():\n");
+   printf("Sensitivity analysis features are not enabled.\n");
    printf("Please rebuild SYMPHONY with these features enabled\n");
    return(0);
 #endif

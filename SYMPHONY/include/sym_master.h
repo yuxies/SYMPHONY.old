@@ -205,6 +205,16 @@ int check_feasibility_new_rhs PROTO((int level, MIPdesc *mip,
 					int ub_cnt,
 					int *new_ub_ind, double *new_ub_val,
 					double *objval));
+// Suresh
+int check_feasibility_diff_rhs PROTO((int level, MIPdesc *mip,
+					branch_desc *bpath,
+					int rhs_cnt,
+					int *new_rhs_ind, double *new_rhs_val,
+					int lb_cnt,
+					int *new_lb_ind, double *new_lb_val,
+					int ub_cnt,
+					int *new_ub_ind, double *new_ub_val,
+					double *objval));
 char check_solution PROTO((sym_environment *env, lp_sol *sol,
 				       double * colsol = NULL));
 int trim_warm_tree PROTO((sym_environment *env, bc_node *n));
