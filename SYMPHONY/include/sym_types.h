@@ -464,9 +464,8 @@ typedef struct PROBLEM_STAT{
    int         print_stats_cnt; 
 
    //Suresh
-   int         leaves;             /* the number of leaf nodes in the final
-				      branch-and-bound tree to be used for
-				      warm-starting from scratch */
+   int         leaves;             /* the number of leaf nodes in the optimal
+				      branch-and-bound tree */
 }problem_stat;
 
 /*===========================================================================*/
