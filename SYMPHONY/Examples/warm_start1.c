@@ -49,6 +49,7 @@ int main(int argc, char **argv)
 #include <math.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 
 int main(int argc, char **argv)
 {
@@ -66,8 +67,7 @@ int main(int argc, char **argv)
    sym_set_int_param(env, "generate_cgl_cuts", 0);
    sym_set_int_param(env, "should_use_rel_br", 0);
    sym_set_int_param(env, "prep_level", 0);
-//   sym_set_int_param(env, "verbosity", 5);
-   sym_set_int_param(env, "node_limit", 2000);
+   sym_set_int_param(env, "node_limit", 500);
 
    /* Write out the problem at hand */
    char *file_name = (char *) malloc(CSIZE * 80);
@@ -84,15 +84,10 @@ int main(int argc, char **argv)
    sym_parse_command_line(env2, argc, argv);
    sym_load_problem(env2);
 
-   /* Write out the problem at hand */
-   char *file_name2 = (char *) malloc(CSIZE * 80);
-   sprintf(file_name2, "%s_modImmediate", file_name);
-//   sym_write_mps(env2, file_name2);
-
    /* Perturbation BEGIN */
    /* Read parameters specific to WS: percent_decrease, percent_increase, srand_seed */
-   double percent_increase = 10.0;
-   double percent_decrease = 10.0;
+   double percent_increase = 0.0;
+   double percent_decrease = 0.0;
    unsigned int srand_seed = 1;
    int i;
    for (i = 0; i < argc; i++) {
@@ -157,8 +152,6 @@ int main(int argc, char **argv)
    // Getting some data from previous tree
    int num_leaf_nodes;
    sym_get_num_leaves(env, &num_leaf_nodes);
-   int *leaf_depth = (int *) malloc(ISIZE * num_leaf_nodes);
-   sym_get_leaf_depths(env, leaf_depth);
    int *lb_cnt = (int *) malloc(ISIZE * num_leaf_nodes);
    int *ub_cnt = (int *) malloc(ISIZE * num_leaf_nodes);
    int **lb_ind = (int **) malloc(sizeof(int *) * num_leaf_nodes);
@@ -167,9 +160,16 @@ int main(int argc, char **argv)
    double **ub_val = (double **) malloc(sizeof(double *) * num_leaf_nodes);
    sym_get_branchdesc_bounds(env, lb_cnt, lb_ind, lb_val, ub_cnt, ub_ind, ub_val);
 
+   time_t begin_time, end_time;
+   long elapsed_time;
+   clock_t begin_tick, end_tick;
+   long elapsed_tick;
+   begin_time = time(NULL);
+   begin_tick = clock();
    // Finding cut LHS
    // Getting constraint matrix from base instance
    //    NOTE: all constraints are in <= form due to SYMPHONY's internal change
+   printf("About to find cut LHS\n");
    int nz;
    sym_get_num_elements(env, &nz);
    int *matbeg = (int *) malloc(ISIZE * (numcols+1));
@@ -177,40 +177,32 @@ int main(int argc, char **argv)
    double *matval = (double *) malloc(DSIZE * nz);
    sym_get_matrix(env, &nz, matbeg, matind, matval);
 
+   int *eye_matbeg = (int *) malloc(ISIZE * (numcols+1));
+   int *eye_matind = (int *) malloc(ISIZE * numcols);
+   double *eye_matval = (double *) malloc(DSIZE * numcols);
+   eye_matbeg[0] = 0;
+   for (i = 0; i < numcols; i++) {
+      eye_matbeg[i+1] = eye_matbeg[i] + 1;
+      eye_matind[i] = i;
+      eye_matval[i] = 1;
+   }
    double *cutlhs = (double *) calloc(DSIZE, numcols);
-   int *numelems = (int *) malloc(ISIZE * numcols);
-   int **indices = (int **) malloc(sizeof(int *) * numcols);
-   double **values = (double **) malloc(sizeof(double *) * numcols);
-   int *col_ind = (int *) malloc(ISIZE * numcols);
 
-   for (i = 0; i < numcols; i++) {
-      col_ind[i] = i;
-      numelems[i] = matbeg[i+1] - matbeg[i];
-      indices[i] = (int *) malloc(ISIZE * numelems[i]);
-      values[i] = (double *) malloc(DSIZE * numelems[i]);
-      memcpy(indices[i], &matind[matbeg[i]], ISIZE * numelems[i]);
-      memcpy(values[i], &matval[matbeg[i]], DSIZE * numelems[i]);
-   }
-   double *col_val = (double *) calloc(DSIZE, numcols);
-
-//#pragma omp parallel for
-   for (i = 0; i < numcols; i++) {
-      printf("About to find var %d coeff\n", i);
-      //FIXME: Suresh: assumed that all var bounds are sent here no matter if
-      //   the bounds are zeroes!
-      col_val[i] = 1;
-      sym_get_coeff_for_new_rhs(env, numelems[i], indices[i], values[i],
-         numcols, col_ind, col_val, numcols, col_ind, col_val, &cutlhs[i]);
-      col_val[i] = 0;
-      printf("var %d, coeff = %f\n", i, cutlhs[i]);
-   }
+   //last argument: 1 ==> cut LHS
+   //               2 ==> cut RHS
+   //TODO: work around the last argument later! It is here right now because
+   //      in case of RHS, only "b" vector is passed on instead of a
+   //      [b..b 'num_leaf_nodes times'] matrix to avoid redundant multiplication 
+   //      operations with the duals matrix
+   sym_get_coeff_for_new_rhs(env, matbeg, matind, matval,
+      eye_matbeg, eye_matind, eye_matval, eye_matbeg, eye_matind, eye_matval,
+      cutlhs, numcols, 1);
 
    int newrownz = 0;
    for (i = 0; i < numcols; i++) {
       if (fabs(cutlhs[i]) > zerotol)
          newrownz++;
    }
-   printf("\n");
 
    counter = 0;
    int *newrowind = (int *) malloc(ISIZE * newrownz);
@@ -223,21 +215,21 @@ int main(int argc, char **argv)
          counter++;
       }
    }
+   printf("Found cut LHS\n\n");
 
    // Finding cut RHS
    sym_get_rhs(env2, rhs);
-   int j;
    int *rhs_ind = (int *) malloc(ISIZE * numrows);
    for (i = 0; i < numrows; i++) {
       rhs_ind[i] = i;
    }
    // Changing rhs such that it represents all "<=" type cons
    // coz SYMPHONY changed so in base instance solving!
-   for (j = 0; j < numrows; j++) {
-      if (newsense[j] == 'G' && !newrange[j]) {
-         rhs[j] *= -1;
-      } else if ((newsense[j] == 'R') || (newsense[j] == 'G' && newrange[j])
-            || (newsense[j] == 'L' && newrange[j])) {
+   for (i = 0; i < numrows; i++) {
+      if (newsense[i] == 'G' && !newrange[i]) {
+         rhs[i] *= -1;
+      } else if ((newsense[i] == 'R') || (newsense[i] == 'G' && newrange[i])
+            || (newsense[i] == 'L' && newrange[i])) {
          // Ranged constraint!
          printf("main(): Unsupported row sense!\n");
          exit(1);
@@ -250,38 +242,82 @@ int main(int argc, char **argv)
    sym_get_col_upper(env, newub_val);
 
    printf("About to find cut RHS\n");
-   double cutrhs = SYM_INFINITY;
-   double *templb_val = (double *) malloc(DSIZE * numcols);
-   double *tempub_val = (double *) malloc(DSIZE * numcols);
-   double temprhs;
    int k;
+   //matrices for LBs and UBs stored in arrays representing column ordered format
+   double *templb_mat = (double *) malloc(DSIZE * numcols*num_leaf_nodes);
+   double *tempub_mat = (double *) malloc(DSIZE * numcols*num_leaf_nodes);
 
-//#pragma openmp parallel for
+   int *lb_matbeg = (int *) malloc(ISIZE * (num_leaf_nodes+1));
+   int *ub_matbeg = (int *) malloc(ISIZE * (num_leaf_nodes+1));
+   lb_matbeg[0] = ub_matbeg[0] = 0;
+   int lb_nz, ub_nz;
+
    for (i = 0; i < num_leaf_nodes; i++) {
-      memcpy(templb_val, newlb_val, DSIZE * numcols);
-      memcpy(tempub_val, newub_val, DSIZE * numcols);
+      memcpy(&templb_mat[i*numcols], &newlb_val[0], DSIZE*numcols);
+      memcpy(&tempub_mat[i*numcols], &newub_val[0], DSIZE*numcols);
       for (k = 0; k < lb_cnt[i]; k++) {
-         if (lb_val[i][k] >= templb_val[lb_ind[i][k]]) {
-            templb_val[lb_ind[i][k]] = lb_val[i][k];
+         if (lb_val[i][k] >= templb_mat[i*numcols + lb_ind[i][k]]) {
+            templb_mat[i*numcols + lb_ind[i][k]] = lb_val[i][k];
          }
       }
       for (k = 0; k < ub_cnt[i]; k++) {
-         if (ub_val[i][k] <= tempub_val[ub_ind[i][k]]) {
-            tempub_val[ub_ind[i][k]] = ub_val[i][k];
+         if (ub_val[i][k] <= tempub_mat[i*numcols + ub_ind[i][k]]) {
+            tempub_mat[i*numcols + ub_ind[i][k]] = ub_val[i][k];
          }
       }
-      //FIXME: Suresh: assumed that all var bounds are sent here no matter if
-      //   the bounds are zeroes!
-      sym_get_coeff_for_new_rhs(env, numrows, rhs_ind, rhs,
-            numcols, col_ind, templb_val, numcols, col_ind, tempub_val, &temprhs);
-      printf("  temp RHS %d = %.2f\n", i, temprhs);
-      if (temprhs < cutrhs)
-         cutrhs = temprhs;
+      lb_nz = ub_nz = 0;
+      for (k = 0; k < numcols; k++) {
+         if (fabs(templb_mat[i*numcols + k]) > zerotol) {
+            lb_nz++;
+         }
+         if (fabs(tempub_mat[i*numcols + k]) > zerotol) {
+            ub_nz++;
+         }
+      }
+      lb_matbeg[i+1] = lb_matbeg[i] + lb_nz;
+      ub_matbeg[i+1] = ub_matbeg[i] + ub_nz;
+   }
+   
+   int *lb_matind = (int *) malloc(ISIZE * lb_matbeg[num_leaf_nodes]);
+   int *ub_matind = (int *) malloc(ISIZE * ub_matbeg[num_leaf_nodes]);
+   double *lb_matval = (double *) malloc(DSIZE * lb_matbeg[num_leaf_nodes]);
+   double *ub_matval = (double *) malloc(DSIZE * ub_matbeg[num_leaf_nodes]);
+   lb_nz = ub_nz = 0;
+   for (i = 0; i < num_leaf_nodes; i++) {
+      for (k = 0; k < numcols; k++) {
+         if (fabs(templb_mat[i*numcols + k]) > zerotol) {
+            lb_matind[lb_nz] = k;
+            lb_matval[lb_nz] = templb_mat[i*numcols + k];
+            lb_nz++;
+         }
+         if (fabs(tempub_mat[i*numcols + k]) > zerotol) {
+            ub_matind[ub_nz] = k;
+            ub_matval[ub_nz] = tempub_mat[i*numcols + k];
+            ub_nz++;
+         }
+      }
+   }
+
+   double *cutrhs_array = (double *) calloc(DSIZE, num_leaf_nodes);
+   sym_get_coeff_for_new_rhs(env, NULL, rhs_ind, rhs,
+         lb_matbeg, lb_matind, lb_matval, ub_matbeg, ub_matind, ub_matval,
+         cutrhs_array, num_leaf_nodes, 2);
+   double cutrhs = SYM_INFINITY;
+   for (i = 0; i < num_leaf_nodes; i++) {
+      if (cutrhs_array[i] < cutrhs) {
+         cutrhs = cutrhs_array[i];
+      }
    }
    printf("Found cut RHS = %f\n\n", cutrhs);
    /* Finding cut coefficients END */
 
    sym_add_row(env2, newrownz, newrowind, newrowval, 'G', cutrhs, 0);
+   end_tick = clock();
+   end_time = time(NULL);
+   elapsed_time = (long) (end_time - begin_time);
+   elapsed_tick = (long) (end_tick - begin_tick) / CLOCKS_PER_SEC;
+   printf("Time for finding cut = %ld\n\n", elapsed_time);
+   printf("CPU time for finding cut = %ld\n\n", elapsed_tick);
 
    /* Write out the problem at hand */
    char *file_name4 = (char *) malloc(CSIZE * 80);
@@ -298,29 +334,33 @@ int main(int argc, char **argv)
    sym_set_int_param(env2, "generate_cgl_cuts", 0);
    sym_set_int_param(env2, "should_use_rel_br", 0);
    sym_set_int_param(env2, "prep_level", 0);
-   sym_set_int_param(env2, "node_limit", 2000);
+   sym_set_int_param(env2, "node_limit", 500);
 
    sym_solve(env2);
 
    // Freeing memory
    free(file_name4);
-   free(newrowval);
-   free(newrowind);
-   for (i = 0; i < numcols; i++) {
-      free(values[i]);
-      free(indices[i]);
-   }
-   free(values);
-   free(indices);
-   free(numelems);
-   free(cutlhs);
-   free(matval);
-   free(matind);
-   free(matbeg);
-   free(col_ind);
+   free(cutrhs_array);
+   free(ub_matval);
+   free(lb_matval);
+   free(ub_matind);
+   free(lb_matind);
+   free(ub_matbeg);
+   free(lb_matbeg);
+   free(tempub_mat);
+   free(templb_mat);
    free(newub_val);
    free(newlb_val);
    free(rhs_ind);
+   free(newrowval);
+   free(newrowind);
+   free(cutlhs);
+   free(eye_matval);
+   free(eye_matind);
+   free(eye_matbeg);  
+   free(matval);
+   free(matind);
+   free(matbeg);
    for (i = 0; i < num_leaf_nodes; i++) {
       free(ub_val[i]);
       free(lb_val[i]);
@@ -333,17 +373,12 @@ int main(int argc, char **argv)
    free(lb_ind);
    free(ub_cnt);
    free(lb_cnt);
-   free(leaf_depth);
    free(file_name3);
    free(rhs);
    free(newrange);
    free(newsense);
    free(rand_seq);
-   free(file_name2);
    free(file_name1);
-   free(tempub_val);
-   free(templb_val);
-   free(col_val);
 
    sym_close_environment(env2);
    sym_close_environment(env);

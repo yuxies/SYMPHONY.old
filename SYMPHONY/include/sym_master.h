@@ -156,20 +156,22 @@ void get_dual_pruned PROTO((bc_node *root, MIPdesc *mip,
 			       int MAX_ALLOWABLE_NUM_PIECES));
 //Suresh
 double get_coeff_for_new_rhs PROTO((bc_node *node, MIPdesc *mip, branch_desc *bpath,
-				 int rhs_cnt, int *new_rhs_ind,
-				 double *new_rhs_val,
-				 int lb_cnt, int *new_lb_ind,
-				 double *new_lb_val,
-				 int ub_cnt, int *new_ub_ind,
-				 double *new_ub_val));
+				 int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+				 int lb_cnt, int *new_lb_ind, double *new_lb_val,
+				 int ub_cnt, int *new_ub_ind, double *new_ub_val));
 //Suresh
-double get_coeff_from_dual_data PROTO((warm_start_desc *ws, MIPdesc *mip,
-				 int rhs_cnt, int *new_rhs_ind,
-				 double *new_rhs_val,
-				 int lb_cnt, int *new_lb_ind,
-				 double *new_lb_val,
-				 int ub_cnt, int *new_ub_ind,
-				 double *new_ub_val));
+void get_coeff_from_dual_data PROTO((warm_start_desc *ws, MIPdesc *mip,
+         int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
+         int *lb_matbeg, int *lb_matind, double *lb_matval,
+         int *ub_matbeg, int *ub_matind, double *ub_matval,
+         double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index));
+//Suresh
+int get_sparse_matrix_product PROTO((int *row_matbeg, int *row_matind, double *row_matval,
+         int *matbeg, int *matind, double *matval,
+         double *product_array, int prod_row_dim, int prod_col_dim, int index));
+//Suresh
+int get_sparse_matrix_array_product PROTO((int *row_matbeg, int *row_matind, double *row_matval,
+         double *array, double *product_array, int prod_dim));
 //Suresh
 int collect_aux_data PROTO((warm_start_desc *ws, int num_rows, int num_cols,
 				int sensitivity_rhs, int sensitivity_bounds));
@@ -178,8 +180,9 @@ int get_num_leaf_nodes PROTO((bc_node *node));
 //Suresh
 int get_leaf_node_data PROTO((bc_node *node, branch_desc *bpath, branch_desc **bpaths, 
 				int *leaf_depth, int *leaf_num, double **duals,
-				double **djs, int *feasibility_status, double *lower_bound, int num_rows,
-				int num_cols, int sensitivity_rhs, int sensitivity_bounds));
+				double **djs, int *feasibility_status, double *lower_bound,
+            int *duals_row_matbeg, int *djs_row_matbeg,
+            int num_rows, int num_cols, int sensitivity_rhs, int sensitivity_bounds));
 
 double get_lb_for_new_rhs PROTO((bc_node *node, MIPdesc *mip, branch_desc *bpath,
 				 int rhs_cnt, int *new_rhs_ind,
@@ -207,13 +210,9 @@ int check_feasibility_new_rhs PROTO((int level, MIPdesc *mip,
 					double *objval));
 // Suresh
 int check_feasibility_diff_rhs PROTO((int level, MIPdesc *mip,
-					branch_desc *bpath,
-					int rhs_cnt,
-					int *new_rhs_ind, double *new_rhs_val,
-					int lb_cnt,
-					int *new_lb_ind, double *new_lb_val,
-					int ub_cnt,
-					int *new_ub_ind, double *new_ub_val,
+					int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+					int lb_cnt, int *new_lb_ind, double *new_lb_val,
+					int ub_cnt, int *new_ub_ind, double *new_ub_val,
 					double *objval));
 char check_solution PROTO((sym_environment *env, lp_sol *sol,
 				       double * colsol = NULL));

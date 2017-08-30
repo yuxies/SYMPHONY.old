@@ -316,13 +316,10 @@ int sym_get_dual_pruned PROTO((sym_environment *env,
 
 //Suresh
 int sym_get_coeff_for_new_rhs PROTO((sym_environment *env,
-				  int rhs_cnt, int *new_rhs_ind,
-				  double *new_rhs_val,
-				  int lb_cnt, int *new_lb_ind,
-				  double *new_lb_val,
-				  int ub_cnt, int *new_ub_ind,
-				  double *new_ub_val,
-				  double *lb_for_new_rhs));
+				  int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
+				  int *lb_matbeg, int *lb_matind, double *lb_matval,
+				  int *ub_matbeg, int *ub_matind, double *ub_matval,
+				  double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index));
 
 
 int sym_get_lb_for_new_rhs PROTO((sym_environment *env,

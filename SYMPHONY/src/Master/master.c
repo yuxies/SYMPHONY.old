@@ -6670,10 +6670,10 @@ int sym_get_lb_for_new_rhs(sym_environment *env,
 /*===========================================================================*/
 //Suresh
 int sym_get_coeff_for_new_rhs(sym_environment *env,
-			   int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
-			   int lb_cnt, int *new_lb_ind, double *new_lb_val,
-			   int ub_cnt, int *new_ub_ind, double *new_ub_val,
-			   double *lb_for_new_rhs)
+      int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
+      int *lb_matbeg, int *lb_matind, double *lb_matval, 
+      int *ub_matbeg, int *ub_matind, double *ub_matval,
+      double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index)
 {
 #ifdef SENSITIVITY_ANALYSIS
    if (!env || !env->mip || 
@@ -6682,12 +6682,12 @@ int sym_get_coeff_for_new_rhs(sym_environment *env,
       printf("Trying to read an empty problem, an empty problem description"); 
       printf(" or tree nodes were not kept in memory!\n");
       return(FUNCTION_TERMINATED_ABNORMALLY);
-   }else if (!env->par.tm_par.sensitivity_rhs && rhs_cnt != 0){
+   }else if (!env->par.tm_par.sensitivity_rhs && rhs_matbeg != NULL){
       printf("sym_get_coeff_for_new_rhs():\n");
       printf("RHS analysis parameter not set, cannot change RHS\n");
       return(FUNCTION_TERMINATED_ABNORMALLY);
    }else if (!env->par.tm_par.sensitivity_bounds &&
-	     (lb_cnt != 0 || ub_cnt != 0)){
+	     (lb_matbeg != NULL || ub_matbeg != NULL)){
       printf("sym_get_coeff_for_new_rhs():\n");
       printf("Bounds analysis parameter not set, cannot change RHS.\n");
       return(FUNCTION_TERMINATED_ABNORMALLY);
@@ -6697,18 +6697,23 @@ int sym_get_coeff_for_new_rhs(sym_environment *env,
       return(FUNCTION_TERMINATED_ABNORMALLY);
    }else{
       if (env->par.tm_par.warm_start_type == FROM_SCRATCH) {
-         *lb_for_new_rhs = get_coeff_from_dual_data(env->warm_start, env->mip,
-					   rhs_cnt, new_rhs_ind, new_rhs_val,
-					   lb_cnt, new_lb_ind, new_lb_val,
-					   ub_cnt, new_ub_ind, new_ub_val);
+         get_coeff_from_dual_data(env->warm_start, env->mip,
+               rhs_matbeg, rhs_matind, rhs_matval,
+               lb_matbeg, lb_matind, lb_matval,
+               ub_matbeg, ub_matind, ub_matval,
+               lb_for_new_rhs, dim_lb_for_new_rhs, index);
       } else {
+         //TODO: Following call is invalid coz rhs_cnt, lb_cnt, ub_cnt, etc
+         //        does not exist in this modified function call
          branch_desc *bpath = (branch_desc *) malloc (env->warm_start->stat.max_depth*
 				      sizeof(branch_desc));
+         /*
          *lb_for_new_rhs = get_coeff_for_new_rhs(env->warm_start->rootnode, env->mip,
 					   bpath,
 					   rhs_cnt, new_rhs_ind, new_rhs_val,
 					   lb_cnt, new_lb_ind, new_lb_val,
 					   ub_cnt, new_ub_ind, new_ub_val);
+         */
          FREE(bpath);
       }
       return(FUNCTION_TERMINATED_NORMALLY);

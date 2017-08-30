@@ -928,12 +928,16 @@ typedef struct WARM_START_DESC{
    int            trim_tree_index;
    //Suresh
    int		      num_leaf_nodes;
-   double       **duals; 		         //size=num_leaf_nodes
-   double	    **djs;			         //size=num_leaf_nodes
    branch_desc  **bpaths; 		         //size=num_leaf_nodes
    int		     *leaf_depth;		      //size=num_leaf_nodes
    int		     *feasibility_status;	//size=num_leaf_nodes
-   double        *lower_bound;        //size=num_leaf_nodes
+   double        *lower_bound;         //size=num_leaf_nodes
+   int           *duals_row_matbeg;    //size=num_leaf_nodes+1
+   int           *duals_row_matind;    //size=nnz in the duals matrix
+   double        *duals_row_matval;    //size=nnz in the duals matrix
+   int           *djs_row_matbeg;      //size=num_leaf_nodes+1
+   int           *djs_row_matind;      //size=nnz in the djs matrix
+   double        *djs_row_matval;      //size=nnz in the djs matrix
 }warm_start_desc;
 
 /*===========================================================================*/
