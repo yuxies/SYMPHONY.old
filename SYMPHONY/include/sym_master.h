@@ -161,17 +161,10 @@ double get_coeff_for_new_rhs PROTO((bc_node *node, MIPdesc *mip, branch_desc *bp
 				 int ub_cnt, int *new_ub_ind, double *new_ub_val));
 //Suresh
 void get_coeff_from_dual_data PROTO((warm_start_desc *ws, MIPdesc *mip,
-         int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
-         int *lb_matbeg, int *lb_matind, double *lb_matval,
-         int *ub_matbeg, int *ub_matind, double *ub_matval,
-         double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index));
-//Suresh
-int get_sparse_matrix_product PROTO((int *row_matbeg, int *row_matind, double *row_matval,
-         int *matbeg, int *matind, double *matval,
-         double *product_array, int prod_row_dim, int prod_col_dim, int index));
-//Suresh
-int get_sparse_matrix_array_product PROTO((int *row_matbeg, int *row_matind, double *row_matval,
-         double *array, double *product_array, int prod_dim));
+   		int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+		int lb_cnt, int *new_lb_ind, double *new_lb_val,
+		int ub_cnt, int *new_ub_ind, double *new_ub_val,
+                double *lb_for_new_rhs));
 //Suresh
 int collect_aux_data PROTO((warm_start_desc *ws, int num_rows, int num_cols,
 				int sensitivity_rhs, int sensitivity_bounds));
@@ -179,9 +172,11 @@ int collect_aux_data PROTO((warm_start_desc *ws, int num_rows, int num_cols,
 int get_num_leaf_nodes PROTO((bc_node *node));
 //Suresh
 int get_leaf_node_data PROTO((bc_node *node, branch_desc *bpath, branch_desc **bpaths, 
-				int *leaf_depth, int *leaf_num, double **duals,
-				double **djs, int *feasibility_status, double *lower_bound,
-            int *duals_row_matbeg, int *djs_row_matbeg,
+            int *leaf_depth, int *leaf_num, int *feasibility_status, double *lower_bound,
+            int *duals_index_row, int *duals_index_col, double *duals_val, int *nnz_duals,
+            int *djs_index_row, int *djs_index_col, double *djs_val, int *nnz_djs,
+            int *pos_djs_index_row, int *pos_djs_index_col, double *pos_djs_val, int *nnz_pos_djs,
+            int *neg_djs_index_row, int *neg_djs_index_col, double *neg_djs_val, int *nnz_neg_djs,
             int num_rows, int num_cols, int sensitivity_rhs, int sensitivity_bounds));
 
 double get_lb_for_new_rhs PROTO((bc_node *node, MIPdesc *mip, branch_desc *bpath,

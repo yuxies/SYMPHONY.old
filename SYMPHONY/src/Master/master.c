@@ -3438,6 +3438,7 @@ int sym_get_branchdesc_bounds (sym_environment *env, int *lb_cnt,
    for (i = 0; i < num_leaf_nodes; i++) {
       lb_cnt[i] = 0;
       ub_cnt[i] = 0;
+
       for (j = 0; j < leaf_depth[i]; j++) {
          assert(bpaths[i][j].type == BRANCHING_VARIABLE);
          if (bpaths[i][j].sense == 'L') {
@@ -3449,7 +3450,9 @@ int sym_get_branchdesc_bounds (sym_environment *env, int *lb_cnt,
             exit(1);
          }
       }
+
       assert((lb_cnt[i] + ub_cnt[i]) == leaf_depth[i]);
+
       if (lb_cnt[i]) {
          lb_ind[i] = (int *) malloc(ISIZE * lb_cnt[i]);
          lb_val[i] = (double *) malloc(DSIZE * lb_cnt[i]);
@@ -3464,7 +3467,7 @@ int sym_get_branchdesc_bounds (sym_environment *env, int *lb_cnt,
          ub_ind[i] = NULL;
          ub_val[i] = NULL;
       }
-//      printf("sym_get_branchdesc_bounds(): lb_cnt[%d]: %d, ub_cnt[%d]: %d\n", i, lb_cnt[i], i, ub_cnt[i]);
+
       counter_lb = 0;
       counter_ub = 0;
       for (j = 0; j < leaf_depth[i]; j++) {
@@ -3479,6 +3482,97 @@ int sym_get_branchdesc_bounds (sym_environment *env, int *lb_cnt,
          }
       }
    }
+
+   return(FUNCTION_TERMINATED_NORMALLY);
+}
+
+/*===========================================================================*/
+/*===========================================================================*/
+
+int sym_get_leaf_feas_stats(sym_environment *env, int *leaffeasstat)
+{
+   if (!env->mip || !env->warm_start || !env->warm_start->feasibility_status){
+      if(env->par.verbosity >= 1){
+         printf("sym_get_leaf_feas_stats():There is no loaded mip description or\n");
+         printf("    no warm start data structure or no leaf feasibility statuses!\n");
+      }
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+
+   memcpy(leaffeasstat, env->warm_start->feasibility_status,
+                  ISIZE*env->warm_start->num_leaf_nodes);
+
+   return(FUNCTION_TERMINATED_NORMALLY);
+}
+
+/*===========================================================================*/
+/*===========================================================================*/
+
+int sym_get_leaf_duals_by_row(sym_environment *env, CoinPackedMatrix leafdualsbyrow)
+{
+   if (!env->mip || !env->warm_start){
+      if(env->par.verbosity >= 1){
+         printf("sym_get_leaf_duals_by_row():There is no loaded mip description or\n");
+         printf("    no warm start data structure!\n");
+      }
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+
+   leafdualsbyrow = CoinPackedMatrix(env->warm_start->duals_by_row);
+
+   return(FUNCTION_TERMINATED_NORMALLY);
+}
+
+/*===========================================================================*/
+/*===========================================================================*/
+
+int sym_get_leaf_djs_by_row(sym_environment *env, CoinPackedMatrix leafdjsbyrow)
+{
+   if (!env->mip || !env->warm_start){
+      if(env->par.verbosity >= 1){
+         printf("sym_get_leaf_djs_by_row():There is no loaded mip description or\n");
+         printf("    no warm start data structure!\n");
+      }
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+
+   leafdjsbyrow = CoinPackedMatrix(env->warm_start->djs_by_row);
+
+   return(FUNCTION_TERMINATED_NORMALLY);
+}
+
+/*===========================================================================*/
+/*===========================================================================*/
+
+int sym_get_leaf_pos_djs_by_row(sym_environment *env, CoinPackedMatrix leafposdjsbyrow)
+{
+   if (!env->mip || !env->warm_start){
+      if(env->par.verbosity >= 1){
+         printf("sym_get_leaf_pos_djs_by_row():There is no loaded mip description or\n");
+         printf("    no warm start data structure!\n");
+      }
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+
+   leafposdjsbyrow = CoinPackedMatrix(env->warm_start->pos_djs_by_row);
+
+   return(FUNCTION_TERMINATED_NORMALLY);
+}
+
+/*===========================================================================*/
+/*===========================================================================*/
+
+int sym_get_leaf_neg_djs_by_row(sym_environment *env, CoinPackedMatrix leafnegdjsbyrow)
+{
+   if (!env->mip || !env->warm_start){
+      if(env->par.verbosity >= 1){
+         printf("sym_get_leaf_neg_djs_by_row():There is no loaded mip description or\n");
+         printf("    no warm start data structure!\n");
+      }
+      return(FUNCTION_TERMINATED_ABNORMALLY);
+   }
+
+   leafnegdjsbyrow = CoinPackedMatrix(env->warm_start->neg_djs_by_row);
 
    return(FUNCTION_TERMINATED_NORMALLY);
 }
@@ -6670,10 +6764,10 @@ int sym_get_lb_for_new_rhs(sym_environment *env,
 /*===========================================================================*/
 //Suresh
 int sym_get_coeff_for_new_rhs(sym_environment *env,
-      int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
-      int *lb_matbeg, int *lb_matind, double *lb_matval, 
-      int *ub_matbeg, int *ub_matind, double *ub_matval,
-      double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index)
+        int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+        int lb_cnt, int *new_lb_ind, double *new_lb_val,
+        int ub_cnt, int *new_ub_ind, double *new_ub_val,
+        double *lb_for_new_rhs)
 {
 #ifdef SENSITIVITY_ANALYSIS
    if (!env || !env->mip || 
@@ -6682,12 +6776,12 @@ int sym_get_coeff_for_new_rhs(sym_environment *env,
       printf("Trying to read an empty problem, an empty problem description"); 
       printf(" or tree nodes were not kept in memory!\n");
       return(FUNCTION_TERMINATED_ABNORMALLY);
-   }else if (!env->par.tm_par.sensitivity_rhs && rhs_matbeg != NULL){
+   }else if (!env->par.tm_par.sensitivity_rhs && rhs_cnt != 0){
       printf("sym_get_coeff_for_new_rhs():\n");
       printf("RHS analysis parameter not set, cannot change RHS\n");
       return(FUNCTION_TERMINATED_ABNORMALLY);
    }else if (!env->par.tm_par.sensitivity_bounds &&
-	     (lb_matbeg != NULL || ub_matbeg != NULL)){
+	     (lb_cnt != 0 || ub_cnt != 0)){
       printf("sym_get_coeff_for_new_rhs():\n");
       printf("Bounds analysis parameter not set, cannot change RHS.\n");
       return(FUNCTION_TERMINATED_ABNORMALLY);
@@ -6697,23 +6791,22 @@ int sym_get_coeff_for_new_rhs(sym_environment *env,
       return(FUNCTION_TERMINATED_ABNORMALLY);
    }else{
       if (env->par.tm_par.warm_start_type == FROM_SCRATCH) {
+         //FIXME: This is a max. value from a subadditive representation
+          //    whereas the else-statement gives a min. value which is
+          //    not subadditive in nature. Handle this variation properly!
          get_coeff_from_dual_data(env->warm_start, env->mip,
-               rhs_matbeg, rhs_matind, rhs_matval,
-               lb_matbeg, lb_matind, lb_matval,
-               ub_matbeg, ub_matind, ub_matval,
-               lb_for_new_rhs, dim_lb_for_new_rhs, index);
+               rhs_cnt, new_rhs_ind, new_rhs_val,
+               lb_cnt, new_lb_ind, new_lb_val,
+               ub_cnt, new_ub_ind, new_ub_val,
+               lb_for_new_rhs);
       } else {
-         //TODO: Following call is invalid coz rhs_cnt, lb_cnt, ub_cnt, etc
-         //        does not exist in this modified function call
          branch_desc *bpath = (branch_desc *) malloc (env->warm_start->stat.max_depth*
 				      sizeof(branch_desc));
-         /*
          *lb_for_new_rhs = get_coeff_for_new_rhs(env->warm_start->rootnode, env->mip,
 					   bpath,
 					   rhs_cnt, new_rhs_ind, new_rhs_val,
 					   lb_cnt, new_lb_ind, new_lb_val,
 					   ub_cnt, new_ub_ind, new_ub_val);
-         */
          FREE(bpath);
       }
       return(FUNCTION_TERMINATED_NORMALLY);

@@ -4501,75 +4501,41 @@ double get_coeff_for_new_rhs(bc_node *node, MIPdesc *mip, branch_desc *bpath,
 /*===========================================================================*/
 //Suresh
 void get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
-      int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
-      int *lb_matbeg, int *lb_matind, double *lb_matval,
-      int *ub_matbeg, int *ub_matind, double *ub_matval,
-      double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index)
+        int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+	int lb_cnt, int *new_lb_ind, double *new_lb_val,
+	int ub_cnt, int *new_ub_ind, double *new_ub_val,
+        double *lb_for_new_rhs)
 {
 #ifdef SENSITIVITY_ANALYSIS
    if(!ws){
       printf("Warning: NULL pointer in get_coeff_from_dual_data()\n");
    }
 
-   //dual and dj sparse matrices
-   int *duals_row_matbeg = ws->duals_row_matbeg;
-   int *duals_row_matind = ws->duals_row_matind;
-   double *duals_row_matval = ws->duals_row_matval;
-   int *djs_row_matbeg = ws->djs_row_matbeg;
-   int *djs_row_matind = ws->djs_row_matind;
-   double *djs_row_matval = ws->djs_row_matval;
+   int num_leaf_nodes = ws->num_leaf_nodes;
+   CoinPackedVector rhs_vector(rhs_cnt, new_rhs_ind, new_rhs_val, false);
+   CoinPackedVector lb_vector(lb_cnt, new_lb_ind, new_lb_val, false);
+   CoinPackedVector ub_vector(ub_cnt, new_ub_ind, new_ub_val, false);
 
-   int num_leaf_nodes = ws->num_leaf_nodes, num_cols = mip->n, num_rows = mip->m;
-   int max_mn = (num_cols > num_rows) ? num_cols : num_rows;
-   int second_dim = (index == 1) ? num_cols : num_leaf_nodes;
+   //memory allocation for resultant products
+   double *duals_rhs_product = (double *) calloc(DSIZE, num_leaf_nodes);
+   double *djs_lb_product = (double *) calloc(DSIZE, num_leaf_nodes);
+   double *djs_ub_product = (double *) calloc(DSIZE, num_leaf_nodes);
+   double *total_product = (double *) calloc(DSIZE, num_leaf_nodes);
 
-   //memory allocation for products of sparse matrices in array form
-   double *duals_rhs_product = (double *) calloc(DSIZE, num_leaf_nodes*second_dim);
-   double *djs_lb_product = (double *) calloc(DSIZE, num_leaf_nodes*second_dim);
-   double *djs_ub_product = (double *) calloc(DSIZE, num_leaf_nodes*second_dim);
-   double *total_product = (double *) calloc(DSIZE, num_leaf_nodes*second_dim);
-
-   //last argument: 0 ==> normal matrix product,
-   //               1 ==> matrix product only for positive first matrix elements
-   //               2 ==> matrix product only for negative first matrix elements
-   //TODO: get rid of the index==1 or index==2 if loops all over
-   //      (perhaps by introducing different functions)
-   if (index == 1) {
-      get_sparse_matrix_product(duals_row_matbeg, duals_row_matind, duals_row_matval,
-            rhs_matbeg, rhs_matind, rhs_matval, duals_rhs_product,
-            num_leaf_nodes, second_dim, 0);
-   } else {
-      get_sparse_matrix_array_product(duals_row_matbeg, duals_row_matind, duals_row_matval,
-            rhs_matval, duals_rhs_product, num_leaf_nodes);
-   }
-   get_sparse_matrix_product(djs_row_matbeg, djs_row_matind, djs_row_matval,
-         lb_matbeg, lb_matind, lb_matval, djs_lb_product,
-         num_leaf_nodes, second_dim, 1);
-   get_sparse_matrix_product(djs_row_matbeg, djs_row_matind, djs_row_matval,
-         ub_matbeg, ub_matind, ub_matval, djs_ub_product,
-         num_leaf_nodes, second_dim, 2);
+   //matrix-vector products
+   ws->duals_by_row.times(rhs_vector, duals_rhs_product);
+   ws->pos_djs_by_row.times(lb_vector, djs_lb_product);
+   ws->neg_djs_by_row.times(ub_vector, djs_ub_product);
 
    //find total product array
    int k;
-   if (index == 1) {
-      for (k = 0; k < num_leaf_nodes*second_dim; k++) {
-         total_product[k] = duals_rhs_product[k] + djs_lb_product[k] + djs_ub_product[k];
-      }
-   } else {
-      for (k = 0; k < num_leaf_nodes*second_dim; k++) {
-         total_product[k] = duals_rhs_product[(k % num_leaf_nodes)] + djs_lb_product[k] + djs_ub_product[k];
-      }
+   for (k = 0; k < num_leaf_nodes; k++) {
+      total_product[k] = duals_rhs_product[k] + djs_lb_product[k] + djs_ub_product[k];
    }
 
    double bound, objval = -SYM_INFINITY;
    int *feasibility_status = ws->feasibility_status;
-   int i, retval, rhs_cnt, lb_cnt, ub_cnt;
-   int *new_rhs_ind = (int *) malloc(ISIZE * max_mn);
-   int *new_lb_ind = (int *) malloc(ISIZE * max_mn);
-   int *new_ub_ind = (int *) malloc(ISIZE * max_mn);
-   double *new_rhs_val = (double *) malloc(DSIZE * max_mn);
-   double *new_lb_val = (double *) malloc(DSIZE * max_mn);
-   double *new_ub_val = (double *) malloc(DSIZE * max_mn);
+   int i, retval;
 
    for (k = 0; k < num_leaf_nodes; k++) {
       if(feasibility_status[k] == FEASIBLE_PRUNED ||
@@ -4579,69 +4545,30 @@ void get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
                   feasibility_status[k] == 0) {
          continue;
       } else if (feasibility_status[k] == INFEASIBLE_PRUNED) {
-         for (i = 0; i < second_dim; i++) {
-            bound = SYM_INFINITY;
-            if (index == 1) {
-               rhs_cnt = rhs_matbeg[i+1] - rhs_matbeg[i];
-               memcpy(new_rhs_ind, &rhs_matind[rhs_matbeg[i]], ISIZE * rhs_cnt);
-               memcpy(new_rhs_val, &rhs_matval[rhs_matbeg[i]], DSIZE * rhs_cnt);
-            } else {
-               //TODO: note that the following memcpys' are repetitive in this 'for' loop
-               //      get rid of it somehow (perhaps by introducing new functions for
-               //      getting rid of the 'if' checks for index parameter)
-               rhs_cnt = num_rows;
-               memcpy(new_rhs_ind, &rhs_matind[0], ISIZE * rhs_cnt);
-               memcpy(new_rhs_val, &rhs_matval[0], DSIZE * rhs_cnt);
-            }
-            lb_cnt = lb_matbeg[i+1] - lb_matbeg[i];
-            ub_cnt = ub_matbeg[i+1] - ub_matbeg[i];
-            memcpy(new_lb_ind, &lb_matind[lb_matbeg[i]], ISIZE * lb_cnt);
-            memcpy(new_ub_ind, &ub_matind[ub_matbeg[i]], ISIZE * ub_cnt);
-            memcpy(new_lb_val, &lb_matval[lb_matbeg[i]], DSIZE * lb_cnt);
-            memcpy(new_ub_val, &ub_matval[ub_matbeg[i]], DSIZE * ub_cnt);
-            retval = check_feasibility_diff_rhs(ws->leaf_depth[k], mip,
-                  rhs_cnt, new_rhs_ind, new_rhs_val,
-                  lb_cnt, new_lb_ind, new_lb_val,
-                  ub_cnt, new_ub_ind, new_ub_val, &objval);
-            if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
-                  retval == LP_D_ITLIM){
-               bound = objval;
-            }
-//            total_product[k*second_dim + i] = bound;
-            total_product[k + i*num_leaf_nodes] = bound;
+         bound = SYM_INFINITY;
+         retval = check_feasibility_diff_rhs(ws->leaf_depth[k], mip,
+               rhs_cnt, new_rhs_ind, new_rhs_val,
+               lb_cnt, new_lb_ind, new_lb_val,
+               ub_cnt, new_ub_ind, new_ub_val, &objval);
+         if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
+               retval == LP_D_ITLIM){
+            bound = objval;
          }
+         total_product[k] = bound;
       } else {
          printf("get_coeff_from_dual_data(): Unknown feasiblility status = %d!\n", feasibility_status[k]);
          exit(1);
       }
    }
 
-   //find max values (of columns of product matrix from total_product array) for lb_for_new_rhs
-      for (k = 0; k < second_dim; k++) {
-         lb_for_new_rhs[k] = total_product[k*num_leaf_nodes];
-   for (i = 1; i < num_leaf_nodes; i++) {
-         if (total_product[i + k*num_leaf_nodes] > lb_for_new_rhs[k]) {
-            lb_for_new_rhs[k] = total_product[i + k*num_leaf_nodes];
-         }
+   //find max of total_product and store it in lb_for_new_rhs
+   *lb_for_new_rhs = total_product[0];
+   for (k = 1; k < num_leaf_nodes; k++) {
+      if (*lb_for_new_rhs < total_product[k]) {
+         *lb_for_new_rhs = total_product[k];
       }
    }
-   /*
-   memcpy(lb_for_new_rhs, &total_product[0], DSIZE * second_dim);
-   for (i = 1; i < num_leaf_nodes; i++) {
-      for (k = 0; k < second_dim; k++) {
-         if (total_product[i*second_dim + k] > lb_for_new_rhs[k]) {
-            lb_for_new_rhs[k] = total_product[i*second_dim + k];
-         }
-      }
-   }
-   */
 
-   FREE(new_ub_val);
-   FREE(new_lb_val);
-   FREE(new_rhs_val);
-   FREE(new_ub_ind);
-   FREE(new_lb_ind);
-   FREE(new_rhs_ind);
    FREE(total_product);
    FREE(djs_ub_product);
    FREE(djs_lb_product);
@@ -4660,228 +4587,98 @@ void get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
 
 /*===========================================================================*/
 //Suresh
-int get_sparse_matrix_product(int *row_matbeg, int *row_matind, double *row_matval,
-         int *matbeg, int *matind, double *matval,
-         double *product_array, int prod_row_dim, int prod_col_dim, int index)
-{
-   if (row_matbeg == NULL || row_matind == NULL || row_matval == NULL ||
-         matbeg == NULL || matind == NULL || matval == NULL || product_array == NULL) {
-      printf("Warning: Error from get_sparse_matrix_product()\n");
-      return(FUNCTION_TERMINATED_ABNORMALLY);
-   } else {
-      int i, j, k, l;
-      double zerotol = 1e-7;
-      if (index == 0) {
-            for (j = 0; j < prod_col_dim; j++) {
-         for (i = 0; i < prod_row_dim; i++) {
-                  for (l = matbeg[j]; l < matbeg[j+1]; l++) {
-               for (k = row_matbeg[i]; k < row_matbeg[i+1]; k++) {
-                     if (row_matind[k] == matind[l]) {
-                        product_array[i + j*prod_row_dim] = product_array[i + j*prod_row_dim] + row_matval[k]*matval[l];
-                     }
-                  }
-               }
-            }
-         }
-      } else if (index == 1) {
-            for (j = 0; j < prod_col_dim; j++) {
-         for (i = 0; i < prod_row_dim; i++) {
-                  for (l = matbeg[j]; l < matbeg[j+1]; l++) {
-               for (k = row_matbeg[i]; k < row_matbeg[i+1]; k++) {
-                     if (row_matind[k] == matind[l]) {
-                        if (row_matval[k] > zerotol) {
-                           product_array[i + j*prod_row_dim] = product_array[i + j*prod_row_dim] + row_matval[k]*matval[l];
-                        }
-                     }
-                  }
-               }
-            }
-         }
-      } else if (index == 2) {
-            for (j = 0; j < prod_col_dim; j++) {
-         for (i = 0; i < prod_row_dim; i++) {
-                  for (l = matbeg[j]; l < matbeg[j+1]; l++) {
-               for (k = row_matbeg[i]; k < row_matbeg[i+1]; k++) {
-                     if (row_matind[k] == matind[l]) {
-                        if (row_matval[k] < -zerotol) {
-                           product_array[i + j*prod_row_dim] = product_array[i + j*prod_row_dim] + row_matval[k]*matval[l];
-                        }
-                     }
-                  }
-               }
-            }
-         }
-      } else {
-         printf("Warning: Unknown index in get_sparse_matrix_product()\n");
-         return(FUNCTION_TERMINATED_ABNORMALLY);
-      }
-      /*
-      if (index == 0) {
-         for (i = 0; i < prod_row_dim; i++) {
-            for (j = 0; j < prod_col_dim; j++) {
-               for (k = row_matbeg[i]; k < row_matbeg[i+1]; k++) {
-                  for (l = matbeg[j]; l < matbeg[j+1]; l++) {
-                     if (row_matind[k] == matind[l]) {
-                        product_array[i*prod_col_dim + j] = product_array[i*prod_col_dim + j] + row_matval[k]*matval[l];
-                     }
-                  }
-               }
-            }
-         }
-      } else if (index == 1) {
-         for (i = 0; i < prod_row_dim; i++) {
-            for (j = 0; j < prod_col_dim; j++) {
-               for (k = row_matbeg[i]; k < row_matbeg[i+1]; k++) {
-                  for (l = matbeg[j]; l < matbeg[j+1]; l++) {
-                     if (row_matind[k] == matind[l]) {
-                        if (row_matval[k] > zerotol) {
-                           product_array[i*prod_col_dim + j] = product_array[i*prod_col_dim + j] + row_matval[k]*matval[l];
-                        }
-                     }
-                  }
-               }
-            }
-         }
-      } else if (index == 2) {
-         for (i = 0; i < prod_row_dim; i++) {
-            for (j = 0; j < prod_col_dim; j++) {
-               for (k = row_matbeg[i]; k < row_matbeg[i+1]; k++) {
-                  for (l = matbeg[j]; l < matbeg[j+1]; l++) {
-                     if (row_matind[k] == matind[l]) {
-                        if (row_matval[k] < -zerotol) {
-                           product_array[i*prod_col_dim + j] = product_array[i*prod_col_dim + j] + row_matval[k]*matval[l];
-                        }
-                     }
-                  }
-               }
-            }
-         }
-      } else {
-         printf("Warning: Unknown index in get_sparse_matrix_product()\n");
-         return(FUNCTION_TERMINATED_ABNORMALLY);
-      }
-      */
-      return(FUNCTION_TERMINATED_NORMALLY);
-   }
-}
-/*===========================================================================*/
-
-
-/*===========================================================================*/
-//Suresh
-int get_sparse_matrix_array_product(int *row_matbeg, int *row_matind, double *row_matval,
-         double *array, double *product_array, int prod_dim)
-{
-   if (row_matbeg == NULL || row_matind == NULL || row_matval == NULL ||
-         array == NULL || product_array == NULL || prod_dim == 0) {
-      printf("Warning: Error from get_sparse_matrix_array_product()\n");
-      return(FUNCTION_TERMINATED_ABNORMALLY);
-   } else {
-      int i, j;
-      for (i = 0; i < prod_dim; i++) {
-         for (j = row_matbeg[i]; j < row_matbeg[i+1]; j++) {
-            product_array[i] = product_array[i] + row_matval[j]*array[row_matind[j]];
-         }
-      }
-      return(FUNCTION_TERMINATED_NORMALLY);
-   }
-}
-
-/*===========================================================================*/
-/*===========================================================================*/
-//Suresh
 int collect_aux_data(warm_start_desc *ws, int num_rows, int num_cols, 
 			int sensitivity_rhs, int sensitivity_bounds)
 {
 #ifdef SENSITIVITY_ANALYSIS
     if(!ws){
-      printf("Warning: NULL pointer in collect_aux_data()\n");
-      return(FUNCTION_TERMINATED_ABNORMALLY);
-   }  
+        printf("Warning: NULL pointer in collect_aux_data()\n");
+        return(FUNCTION_TERMINATED_ABNORMALLY);
+    }  
 
-   //find number of leaf nodes at first
-   ws->num_leaf_nodes = get_num_leaf_nodes(ws->rootnode);
+    //find number of leaf nodes at first
+    ws->num_leaf_nodes = get_num_leaf_nodes(ws->rootnode);
 
-   //various memory allocations
-   //TODO: if conditions on sens_rhs and sens_bounds required here?
-   double **duals = (double **) malloc(sizeof(double *) * ws->num_leaf_nodes);
-   double **djs = (double **) malloc(sizeof(double *) * ws->num_leaf_nodes);
-   ws->bpaths = (branch_desc **) malloc(sizeof(branch_desc *) * ws->num_leaf_nodes);
-   ws->leaf_depth = (int *) malloc(ISIZE * ws->num_leaf_nodes);
-   ws->feasibility_status = (int *) malloc(ISIZE * ws->num_leaf_nodes);
-   ws->lower_bound = (double *) malloc(DSIZE * ws->num_leaf_nodes);
-   ws->duals_row_matbeg = (int *) malloc(ISIZE * (ws->num_leaf_nodes + 1));
-   ws->djs_row_matbeg = (int *) malloc(ISIZE * (ws->num_leaf_nodes + 1));
+    if (sensitivity_rhs || sensitivity_bounds) {
+        //various memory allocations
+        ws->bpaths = (branch_desc **) malloc(sizeof(branch_desc *) * ws->num_leaf_nodes);
+        ws->leaf_depth = (int *) malloc(ISIZE * ws->num_leaf_nodes);
+        ws->feasibility_status = (int *) malloc(ISIZE * ws->num_leaf_nodes);
+        ws->lower_bound = (double *) malloc(DSIZE * ws->num_leaf_nodes);
+        int *duals_index_row = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_rows);
+        int *duals_index_col = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_rows);
+        double *duals_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_rows);
+        int *djs_index_row = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
+        int *djs_index_col = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
+        double *djs_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_cols);
+        int *pos_djs_index_row = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
+        int *pos_djs_index_col = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
+        double *pos_djs_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_cols);
+        int *neg_djs_index_row = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
+        int *neg_djs_index_col = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
+        double *neg_djs_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_cols);
 
-   //max_depth allocation for temporary bpath
-   branch_desc *bpath = (branch_desc *) malloc(ws->stat.max_depth *
-			      sizeof(branch_desc));
-   int leaf_num = 0;
-   ws->duals_row_matbeg[0] = ws->djs_row_matbeg[0] = 0;
+        int leaf_num = 0;
 
-   if (sensitivity_rhs || sensitivity_bounds) {
-      //get various data
-      get_leaf_node_data(ws->rootnode, bpath, ws->bpaths, ws->leaf_depth, &leaf_num,
-   			duals, djs, ws->feasibility_status, ws->lower_bound,
-            ws->duals_row_matbeg, ws->djs_row_matbeg,
-		      num_rows, num_cols, sensitivity_rhs, sensitivity_bounds);
+        //max_depth allocation for temporary bpath
+        branch_desc *bpath = (branch_desc *) malloc(ws->stat.max_depth *
+                sizeof(branch_desc));
 
-      //assert that indeed all leaf nodes data is obtained
-      assert(ws->num_leaf_nodes == leaf_num);
+        //get various data
+        int nnz_duals = 0;
+        int nnz_djs = 0;
+        int nnz_pos_djs = 0;
+        int nnz_neg_djs = 0;
+        get_leaf_node_data(ws->rootnode, bpath, ws->bpaths, ws->leaf_depth, &leaf_num,
+                ws->feasibility_status, ws->lower_bound,
+                duals_index_row, duals_index_col, duals_val, &nnz_duals,
+                djs_index_row, djs_index_col, djs_val, &nnz_djs,
+                pos_djs_index_row, pos_djs_index_col, pos_djs_val, &nnz_pos_djs,
+                neg_djs_index_row, neg_djs_index_col, neg_djs_val, &nnz_neg_djs,
+                num_rows, num_cols, sensitivity_rhs, sensitivity_bounds);
 
-      //more memory allocations
-      int nnz_duals = ws->duals_row_matbeg[leaf_num];
-      int nnz_djs = ws->djs_row_matbeg[leaf_num];
-      int i, j, nz = 0;
-      double zerotol = 1e-7;
-      ws->duals_row_matind = (int *) malloc(ISIZE * nnz_duals);
-      ws->duals_row_matval = (double *) malloc(DSIZE * nnz_duals);
-      ws->djs_row_matind = (int *) malloc(ISIZE * nnz_djs);
-      ws->djs_row_matval = (double *) malloc(DSIZE * nnz_djs);
+        //assert that indeed all leaf nodes data is obtained
+        assert(ws->num_leaf_nodes == leaf_num);
 
-      //fill remaining sparse matrices related data structures
-      for (i = 0; i < leaf_num; i++) {
-         for (j = 0; j < num_rows; j++) {
-            if (fabs(duals[i][j]) >= zerotol) {
-               ws->duals_row_matind[nz] = j;
-               ws->duals_row_matval[nz] = duals[i][j];
-               nz++;
-            }
-         }
-      }
-      nz = 0;
-      for (i = 0; i < leaf_num; i++) {
-         for (j = 0; j < num_cols; j++) {
-            if (fabs(djs[i][j]) >= zerotol) {
-               ws->djs_row_matind[nz] = j;
-               ws->djs_row_matval[nz] = djs[i][j];
-               nz++;
-            }
-         }
-      }
-      FREE(bpath);
-      for (i = 0; i < leaf_num; i++) {
-         FREE(djs[i]);
-         FREE(duals[i]);
-      }
-      FREE(djs);
-      FREE(duals);
+        //construct various coin packed matrices
+        ws->duals_by_row = CoinPackedMatrix(false, duals_index_row,
+                duals_index_col, duals_val, nnz_duals);
+        ws->djs_by_row = CoinPackedMatrix(false, djs_index_row,
+                djs_index_col, djs_val, nnz_djs);
+        ws->pos_djs_by_row = CoinPackedMatrix(false, pos_djs_index_row,
+                pos_djs_index_col, pos_djs_val, nnz_pos_djs);
+        ws->neg_djs_by_row = CoinPackedMatrix(false, neg_djs_index_row,
+                neg_djs_index_col, neg_djs_val, nnz_neg_djs);
 
-   } else if (!sensitivity_rhs && !sensitivity_bounds) {
-      printf("collect_aux_data():\n");
-      printf("Neither sensitivity_rhs nor sensitivity_bounds is enabled.\n"); 
-      printf("Please rebuild SYMPHONY with these features enabled\n");
-      FREE(bpath);
-      return(FUNCTION_TERMINATED_ABNORMALLY);
-   }
+        FREE(bpath);
+        FREE(neg_djs_val);
+        FREE(neg_djs_index_col);
+        FREE(neg_djs_index_row);
+        FREE(pos_djs_val);
+        FREE(pos_djs_index_col);
+        FREE(pos_djs_index_row);
+        FREE(djs_val);
+        FREE(djs_index_col);
+        FREE(djs_index_row);
+        FREE(duals_val);
+        FREE(duals_index_col);
+        FREE(duals_index_row);
 
-   return(FUNCTION_TERMINATED_NORMALLY);
+        return(FUNCTION_TERMINATED_NORMALLY);
+    } else if (!sensitivity_rhs && !sensitivity_bounds) {
+        printf("collect_aux_data():\n");
+        printf("Neither sensitivity_rhs nor sensitivity_bounds is enabled.\n"); 
+        printf("Please rebuild SYMPHONY with these features enabled\n");
+
+        return(FUNCTION_TERMINATED_ABNORMALLY);
+    }
+
 #else
 
-   printf("collect_aux_data():\n");
-   printf("Sensitivity analysis features are not enabled.\n"); 
-   printf("Please rebuild SYMPHONY with these features enabled\n");
-   return(FUNCTION_TERMINATED_ABNORMALLY);
+    printf("collect_aux_data():\n");
+    printf("Sensitivity analysis features are not enabled.\n"); 
+    printf("Please rebuild SYMPHONY with these features enabled\n");
+    return(FUNCTION_TERMINATED_ABNORMALLY);
 
 #endif
 }
@@ -4913,87 +4710,100 @@ int get_num_leaf_nodes(bc_node *node)
 /*===========================================================================*/
 //Suresh
 int get_leaf_node_data(bc_node *node, branch_desc *bpath, branch_desc **bpaths, 
-				int *leaf_depth, int *leaf_num, double **duals, 
-				double **djs, int *feasibility_status, double *lower_bound,
-            int *duals_row_matbeg, int *djs_row_matbeg,
-				int num_rows, int num_cols, int sensitivity_rhs, int sensitivity_bounds)
+	    int *leaf_depth, int *leaf_num, int *feasibility_status, double *lower_bound,
+            int *duals_index_row, int *duals_index_col, double *duals_val, int *nnz_duals,
+            int *djs_index_row, int *djs_index_col, double *djs_val, int *nnz_djs,
+            int *pos_djs_index_row, int *pos_djs_index_col, double *pos_djs_val, int *nnz_pos_djs,
+            int *neg_djs_index_row, int *neg_djs_index_col, double *neg_djs_val, int *nnz_neg_djs,
+	    int num_rows, int num_cols, int sensitivity_rhs, int sensitivity_bounds)
 {
-   if (node == NULL) {
-      printf("Warning: NULL pointer in get_leaf_node_data()\n");
-      return(FUNCTION_TERMINATED_ABNORMALLY);
-   }
+    if (node == NULL) {
+        printf("Warning: NULL pointer in get_leaf_node_data()\n");
+        return(FUNCTION_TERMINATED_ABNORMALLY);
+    }
 
-   int level = node->bc_level, j, child_num = node->bobj.child_num, i;
-   branch_obj *bobj;
+    int level = node->bc_level, j, child_num = node->bobj.child_num, i;
+    branch_obj *bobj;
 
-   //if level>0, save the branching constraint
-   if (sensitivity_bounds && level > 0) {
-      for (j = 0; j < node->parent->bobj.child_num; j++)
-	 if (node->parent->children[j] == node)
-	    break;
-      
-      bobj = &(node->parent->bobj);
-      bpath[level-1].type = bobj->type;
-      bpath[level-1].name = bobj->name;
-      bpath[level-1].sense = bobj->sense[j];
-      bpath[level-1].rhs = bobj->rhs[j];
-      bpath[level-1].range = bobj->range[j];
-      bpath[level-1].branch = bobj->branch[j];
-   }
+    //if level>0, save the branching constraint
+    if (sensitivity_bounds && level > 0) {
+        for (j = 0; j < node->parent->bobj.child_num; j++)
+            if (node->parent->children[j] == node)
+                break;
 
-   //if child_num>0, then do recursion on child nodes
-   for (j = 0; j < child_num; j++)
-      get_leaf_node_data(node->children[j], bpath, bpaths, leaf_depth, leaf_num, 
-				duals, djs, feasibility_status, lower_bound,
-            duals_row_matbeg, djs_row_matbeg,
-				num_rows, num_cols, sensitivity_rhs, sensitivity_bounds);
+        bobj = &(node->parent->bobj);
+        bpath[level-1].type = bobj->type;
+        bpath[level-1].name = bobj->name;
+        bpath[level-1].sense = bobj->sense[j];
+        bpath[level-1].rhs = bobj->rhs[j];
+        bpath[level-1].range = bobj->range[j];
+        bpath[level-1].branch = bobj->branch[j];
+    }
 
-   //if child_num=0, then copy various data
-   if (!child_num) {
-      double zerotol = 1e-7;
-      //allocate memory and save duals and reduced costs
-      if (sensitivity_rhs) {
-         int nz_duals = 0;
-         duals[*leaf_num] = (double *) malloc(DSIZE * num_rows);
-         memcpy(duals[*leaf_num], node->duals, DSIZE*num_rows);
+    //if child_num>0, then do recursion on child nodes
+    for (j = 0; j < child_num; j++)
+        get_leaf_node_data(node->children[j], bpath, bpaths, leaf_depth, leaf_num, 
+                feasibility_status, lower_bound,
+                duals_index_row, duals_index_col, duals_val, nnz_duals,
+                djs_index_row, djs_index_col, djs_val, nnz_djs,
+                pos_djs_index_row, pos_djs_index_col, pos_djs_val, nnz_pos_djs,
+                neg_djs_index_row, neg_djs_index_col, neg_djs_val, nnz_neg_djs,
+                num_rows, num_cols, sensitivity_rhs, sensitivity_bounds);
 
-         //find nnzs and fill row_matbeg entry corresponding to this dual vector
-         for (i = 0; i < num_rows; i++) {
-            if (fabs(duals[*leaf_num][i]) >= zerotol) {
-               nz_duals++;
+    //if child_num=0, then copy various data
+    if (!child_num) {
+        double zerotol = 1e-7;
+        //allocate memory and save duals and reduced costs
+        if (sensitivity_rhs) {
+            //find nnzs and fill duals related structures
+            for (i = 0; i < num_rows; i++) {
+                if (fabs(node->duals[i]) >= zerotol) {
+                    duals_index_row[*nnz_duals] = *leaf_num;
+                    duals_index_col[*nnz_duals] = i;
+                    duals_val[*nnz_duals] = node->duals[i];
+                    *nnz_duals = *nnz_duals + 1;
+                }
             }
-         }
-         duals_row_matbeg[*leaf_num + 1] = duals_row_matbeg[*leaf_num] + nz_duals;
-      }
-      if (sensitivity_bounds) {
-         int nz_djs = 0;
-         djs[*leaf_num] = (double *) malloc(DSIZE * num_cols);
-         memcpy(djs[*leaf_num], node->dj, DSIZE*num_cols);
-
-         //find nnzs and fill row_matbeg entry corresponding to this dj vector
-         for (i = 0; i < num_cols; i++) {
-            if (fabs(djs[*leaf_num][i]) >= zerotol) {
-               nz_djs++;
+        }
+        if (sensitivity_bounds) {
+            //find nnzs and fill row_matbeg entry corresponding to this dj vector
+            for (i = 0; i < num_cols; i++) {
+                if (fabs(node->dj[i]) >= zerotol) {
+                    djs_index_row[*nnz_djs] = *leaf_num;
+                    djs_index_col[*nnz_djs] = i;
+                    djs_val[*nnz_djs] = node->dj[i];
+                    *nnz_djs = *nnz_djs + 1;
+                }
+                if (node->dj[i] >= zerotol) {
+                    pos_djs_index_row[*nnz_pos_djs] = *leaf_num;
+                    pos_djs_index_col[*nnz_pos_djs] = i;
+                    pos_djs_val[*nnz_pos_djs] = node->dj[i];
+                    *nnz_pos_djs = *nnz_pos_djs + 1;
+                }
+                if (node->dj[i] <= -zerotol) {
+                    neg_djs_index_row[*nnz_neg_djs] = *leaf_num;
+                    neg_djs_index_col[*nnz_neg_djs] = i;
+                    neg_djs_val[*nnz_neg_djs] = node->dj[i];
+                    *nnz_neg_djs = *nnz_neg_djs + 1;
+                }
             }
-         }
-         djs_row_matbeg[*leaf_num + 1] = djs_row_matbeg[*leaf_num] + nz_djs;
 
-         if (level == 0) {
-            assert(*leaf_num == 0);
-            bpath = NULL;
-            bpaths[*leaf_num] = NULL;
-         } else {
-            bpaths[*leaf_num] = (branch_desc *) malloc(sizeof(branch_desc) * level);
-            memcpy(bpaths[*leaf_num], bpath, sizeof(branch_desc)*level);
-         }
-      }
-      leaf_depth[*leaf_num] = level;
-      feasibility_status[*leaf_num] = node->feasibility_status;
-      lower_bound[*leaf_num] = node->lower_bound;
-      *leaf_num = *leaf_num + 1;
-   }
+            if (level == 0) {
+                assert(*leaf_num == 0);
+                bpath = NULL;
+                bpaths[*leaf_num] = NULL;
+            } else {
+                bpaths[*leaf_num] = (branch_desc *) malloc(sizeof(branch_desc) * level);
+                memcpy(bpaths[*leaf_num], bpath, sizeof(branch_desc)*level);
+            }
+        }
+        leaf_depth[*leaf_num] = level;
+        feasibility_status[*leaf_num] = node->feasibility_status;
+        lower_bound[*leaf_num] = node->lower_bound;
+        *leaf_num = *leaf_num + 1;
+    }
 
-   return (FUNCTION_TERMINATED_NORMALLY);
+    return (FUNCTION_TERMINATED_NORMALLY);
 }
 
 
@@ -5359,8 +5169,6 @@ int check_feasibility_diff_rhs(int level, MIPdesc *mip,
    for (i = 0; i < lbubcnt; i++){
       change_lbub(lp_data, lbubind[i], lbval[i], ubval[i]);
    }
-
-   //see whether it is feasible!
 
    size_lp_arrays(lp_data, FALSE, TRUE, mip->m, mip->n, mip->nz);
    //get_slacks call crashes here, but we can turn it off by deallocating

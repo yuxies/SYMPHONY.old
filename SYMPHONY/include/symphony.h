@@ -15,6 +15,9 @@
 #ifndef _SYM_API_H
 #define _SYM_API_H
 
+//Suresh: adding for CoinPackedMatrix
+#include "CoinPackedMatrix.hpp"
+
 #define COMPILING_FOR_MASTER
 
 #ifdef PROTO
@@ -253,6 +256,16 @@ int sym_get_num_leaves PROTO((sym_environment *env, int *numleaves));
 int sym_get_leaf_depths PROTO((sym_environment *env, int *leafdepth));
 int sym_get_branchdesc_bounds PROTO((sym_environment *env, int *lbcnt,
       int **lbind, double **lbval, int *ubcnt, int **ubind, double **ubval));
+//Suresh: added following four functions to help other solvers such as MibS
+int sym_get_leaf_feas_stats PROTO((sym_environment *env, int *leaffeasstat));
+int sym_get_leaf_duals_by_row PROTO((sym_environment *env, 
+            CoinPackedMatrix leafdualsbyrow));
+int sym_get_leaf_djs_by_row PROTO((sym_environment *env, 
+            CoinPackedMatrix leafdjsbyrow));
+int sym_get_leaf_pos_djs_by_row PROTO((sym_environment *env, 
+            CoinPackedMatrix leafposdjsbyrow));
+int sym_get_leaf_neg_djs_by_row PROTO((sym_environment *env, 
+            CoinPackedMatrix leafnegdjsbyrow));
 
 int sym_is_continuous PROTO((sym_environment *env, int index, int *value));
 int sym_is_binary PROTO((sym_environment *env, int index, int *value));
@@ -316,10 +329,10 @@ int sym_get_dual_pruned PROTO((sym_environment *env,
 
 //Suresh
 int sym_get_coeff_for_new_rhs PROTO((sym_environment *env,
-				  int *rhs_matbeg, int *rhs_matind, double *rhs_matval,
-				  int *lb_matbeg, int *lb_matind, double *lb_matval,
-				  int *ub_matbeg, int *ub_matind, double *ub_matval,
-				  double *lb_for_new_rhs, int dim_lb_for_new_rhs, int index));
+				  int rhs_cnt, int *new_rhs_ind, double *new_rhs_val,
+				  int lb_cnt, int *new_lb_ind, double *new_lb_val,
+				  int ub_cnt, int *new_ub_ind, double *new_ub_val,
+				  double *lb_for_new_rhs));
 
 
 int sym_get_lb_for_new_rhs PROTO((sym_environment *env,

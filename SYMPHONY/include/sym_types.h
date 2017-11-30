@@ -464,7 +464,7 @@ typedef struct PROBLEM_STAT{
    int         print_stats_cnt; 
 
    //Suresh
-   int         leaves;             /* the number of leaf nodes in the optimal
+   int         leaves;             /* the number of leaf nodes in the final
 				      branch-and-bound tree */
 }problem_stat;
 
@@ -927,17 +927,15 @@ typedef struct WARM_START_DESC{
    int            trim_tree_level;
    int            trim_tree_index;
    //Suresh
-   int		      num_leaf_nodes;
-   branch_desc  **bpaths; 		         //size=num_leaf_nodes
-   int		     *leaf_depth;		      //size=num_leaf_nodes
-   int		     *feasibility_status;	//size=num_leaf_nodes
+   int	          num_leaf_nodes;
+   branch_desc  **bpaths; 	       //size=num_leaf_nodes
+   int	         *leaf_depth;	       //size=num_leaf_nodes
+   int		 *feasibility_status;  //size=num_leaf_nodes
    double        *lower_bound;         //size=num_leaf_nodes
-   int           *duals_row_matbeg;    //size=num_leaf_nodes+1
-   int           *duals_row_matind;    //size=nnz in the duals matrix
-   double        *duals_row_matval;    //size=nnz in the duals matrix
-   int           *djs_row_matbeg;      //size=num_leaf_nodes+1
-   int           *djs_row_matind;      //size=nnz in the djs matrix
-   double        *djs_row_matval;      //size=nnz in the djs matrix
+   CoinPackedMatrix duals_by_row;
+   CoinPackedMatrix djs_by_row;
+   CoinPackedMatrix pos_djs_by_row;
+   CoinPackedMatrix neg_djs_by_row;
 }warm_start_desc;
 
 /*===========================================================================*/
