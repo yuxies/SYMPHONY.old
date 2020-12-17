@@ -936,6 +936,9 @@ typedef struct WARM_START_DESC{
    CoinPackedMatrix djs_by_row;
    CoinPackedMatrix pos_djs_by_row;
    CoinPackedMatrix neg_djs_by_row;
+   // YX: see change inn get_coeff_from_dual_data
+   double *pos_djs_by_row_r; // contains djs times original lower bound vector
+   double *neg_djs_by_row_r; // contains djs times original upper bound vector
 }warm_start_desc;
 
 /*===========================================================================*/

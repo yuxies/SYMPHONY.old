@@ -4512,68 +4512,155 @@ void get_coeff_from_dual_data(warm_start_desc *ws, MIPdesc *mip,
    }
 
    int num_leaf_nodes = ws->num_leaf_nodes;
-   CoinPackedVector rhs_vector(rhs_cnt, new_rhs_ind, new_rhs_val, false);
-   CoinPackedVector lb_vector(lb_cnt, new_lb_ind, new_lb_val, false);
-   CoinPackedVector ub_vector(ub_cnt, new_ub_ind, new_ub_val, false);
-
+   int k;
    //memory allocation for resultant products
-   double *duals_rhs_product = (double *) calloc(DSIZE, num_leaf_nodes);
    double *djs_lb_product = (double *) calloc(DSIZE, num_leaf_nodes);
    double *djs_ub_product = (double *) calloc(DSIZE, num_leaf_nodes);
+   double *duals_rhs_product = (double *) calloc(DSIZE, num_leaf_nodes);
    double *total_product = (double *) calloc(DSIZE, num_leaf_nodes);
 
-   //matrix-vector products
-   ws->duals_by_row.times(rhs_vector, duals_rhs_product);
-   ws->pos_djs_by_row.times(lb_vector, djs_lb_product);
-   ws->neg_djs_by_row.times(ub_vector, djs_ub_product);
+   // YX: modified when count = 1; also try CSC multiplication
+   // YX: applies to find cut LHS call, see L220 warm_start1
+   CoinPackedVector rhs_vector(rhs_cnt, new_rhs_ind, new_rhs_val, false);
+   if (lb_cnt == 1 && ub_cnt == 1){
+      // CoinShallowPackedVector lb_vector = ws->pos_djs_by_col.getVector(*new_lb_ind);
+      // CoinShallowPackedVector ub_vector = ws->neg_djs_by_col.getVector(*new_ub_ind);
+      CoinPackedVector lb_vector(lb_cnt, new_lb_ind, new_lb_val, false);
+      CoinPackedVector ub_vector(ub_cnt, new_ub_ind, new_ub_val, false);
 
-   //find total product array
-   int k;
-   for (k = 0; k < num_leaf_nodes; k++) {
-      total_product[k] = duals_rhs_product[k] + djs_lb_product[k] + djs_ub_product[k];
-   }
+      //matrix-vector products
+      ws->duals_by_row.times(rhs_vector, duals_rhs_product);
+      ws->pos_djs_by_row.times(lb_vector, djs_lb_product);
+      ws->neg_djs_by_row.times(ub_vector, djs_ub_product);
 
-   double bound, objval = -SYM_INFINITY;
-   int *feasibility_status = ws->feasibility_status;
-   int i, retval;
+      //find total product array
+      for (k = 0; k < num_leaf_nodes; k++) {
+         total_product[k] = duals_rhs_product[k] + djs_lb_product[k] + djs_ub_product[k];
+      }
+      
+      double bound, objval = -SYM_INFINITY;
+      int *feasibility_status = ws->feasibility_status;
+      int i, retval;
 
-   for (k = 0; k < num_leaf_nodes; k++) {
-      if(feasibility_status[k] == FEASIBLE_PRUNED ||
-            feasibility_status[k] == OVER_UB_PRUNED ||
-               feasibility_status[k] == NODE_BRANCHED_ON ||
-                  //FIXME: Suresh: following condition is a hack for partial trees!
-                  feasibility_status[k] == 0) {
-         continue;
-      } else if (feasibility_status[k] == INFEASIBLE_PRUNED) {
-         bound = SYM_INFINITY;
-         retval = check_feasibility_diff_rhs(ws->leaf_depth[k], mip,
-               rhs_cnt, new_rhs_ind, new_rhs_val,
-               lb_cnt, new_lb_ind, new_lb_val,
-               ub_cnt, new_ub_ind, new_ub_val, &objval);
-         if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
-               retval == LP_D_ITLIM){
-            bound = objval;
+      for (k = 0; k < num_leaf_nodes; k++) {
+         if(feasibility_status[k] == FEASIBLE_PRUNED ||
+               feasibility_status[k] == OVER_UB_PRUNED ||
+                  feasibility_status[k] == NODE_BRANCHED_ON ||
+                     //FIXME: Suresh: following condition is a hack for partial trees!
+                     feasibility_status[k] == 0) {
+            continue;
+         } else if (feasibility_status[k] == INFEASIBLE_PRUNED) {
+            bound = SYM_INFINITY;
+            retval = check_feasibility_diff_rhs(ws->leaf_depth[k], mip,
+                  rhs_cnt, new_rhs_ind, new_rhs_val,
+                  lb_cnt, new_lb_ind, new_lb_val,
+                  ub_cnt, new_ub_ind, new_ub_val, &objval);
+            if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
+                  retval == LP_D_ITLIM){
+               bound = objval;
+            }
+            total_product[k] = bound;
+         } else {
+            printf("get_coeff_from_dual_data(): Unknown feasiblility status = %d!\n", feasibility_status[k]);
+            exit(1);
          }
-         total_product[k] = bound;
-      } else {
-         printf("get_coeff_from_dual_data(): Unknown feasiblility status = %d!\n", feasibility_status[k]);
-         exit(1);
       }
-   }
+      //find max of total_product and store it in lb_for_new_rhs
+      *lb_for_new_rhs = total_product[0];
+      for (k = 1; k < num_leaf_nodes; k++) {
+         if (*lb_for_new_rhs < total_product[k]) {
+            *lb_for_new_rhs = total_product[k];
+         }
+      }
 
-   //find max of total_product and store it in lb_for_new_rhs
-   *lb_for_new_rhs = total_product[0];
-   for (k = 1; k < num_leaf_nodes; k++) {
-      if (*lb_for_new_rhs < total_product[k]) {
-         *lb_for_new_rhs = total_product[k];
+
+   } else {
+      if (!ws->pos_djs_by_row_r)
+      {
+         ws->pos_djs_by_row_r = (double *) calloc(DSIZE, num_leaf_nodes);
+         ws->neg_djs_by_row_r = (double *) calloc(DSIZE, num_leaf_nodes);
+         ws->pos_djs_by_row.times(mip->lb, ws->pos_djs_by_row_r);
+         ws->neg_djs_by_row.times(mip->ub, ws->neg_djs_by_row_r);
       }
+      CoinPackedVector lb_vector(lb_cnt, new_lb_ind, new_lb_val, false);
+      CoinPackedVector ub_vector(ub_cnt, new_ub_ind, new_ub_val, false);
+
+      //matrix-vector products
+      ws->duals_by_row.times(rhs_vector, duals_rhs_product);
+      ws->pos_djs_by_row.times(lb_vector, djs_lb_product);
+      ws->neg_djs_by_row.times(ub_vector, djs_ub_product);
+
+      //find total product array
+      for (k = 0; k < num_leaf_nodes; k++) {
+         total_product[k] = duals_rhs_product[k] + djs_lb_product[k] + djs_ub_product[k]
+                           + ws->pos_djs_by_row_r[k] + ws->neg_djs_by_row_r[k];
+      }
+
+      double bound, objval = -SYM_INFINITY;
+      int *feasibility_status = ws->feasibility_status;
+      int i, retval;
+
+      int numcols = mip->n;
+      int *col_ind_ = (int *) malloc(ISIZE * numcols);
+      for (i = 0; i < numcols; i++) {
+         col_ind_[i] = i;
+      }
+      double *newlb_val_ = (double *) malloc(DSIZE * numcols);
+      double *newub_val_ = (double *) malloc(DSIZE * numcols);
+      memcpy(newlb_val_, mip->lb, DSIZE * numcols);
+      memcpy(newub_val_, mip->ub, DSIZE * numcols);
+      for (i = 0; i < lb_cnt; i++) {
+         newlb_val_[new_lb_ind[i]] += new_lb_val[i];
+      }
+      for (i = 0; i < ub_cnt; i++) {
+         newub_val_[new_ub_ind[i]] += new_ub_val[i];
+      }
+
+      for (k = 0; k < num_leaf_nodes; k++) {
+         if(feasibility_status[k] == FEASIBLE_PRUNED ||
+               feasibility_status[k] == OVER_UB_PRUNED ||
+                  feasibility_status[k] == NODE_BRANCHED_ON ||
+                     //FIXME: Suresh: following condition is a hack for partial trees!
+                     feasibility_status[k] == 0) {
+            continue;
+         } else if (feasibility_status[k] == INFEASIBLE_PRUNED) {
+            bound = SYM_INFINITY;
+            retval = check_feasibility_diff_rhs(ws->leaf_depth[k], mip,
+                  rhs_cnt, new_rhs_ind, new_rhs_val,
+                  // lb_cnt, new_lb_ind, new_lb_val, 
+                  numcols, col_ind_, newlb_val_,
+                  // ub_cnt, new_ub_ind, new_ub_val,
+                  numcols, col_ind_, newub_val_, 
+                  &objval);
+            if(retval == LP_OPTIMAL || retval == LP_D_OBJLIM ||
+                  retval == LP_D_ITLIM){
+               bound = objval;
+            }
+            total_product[k] = bound;
+         } else {
+            printf("get_coeff_from_dual_data(): Unknown feasiblility status = %d!\n", feasibility_status[k]);
+            exit(1);
+         }
+      }
+
+      //find max of total_product and store it in lb_for_new_rhs
+      *lb_for_new_rhs = total_product[0];
+      for (k = 1; k < num_leaf_nodes; k++) {
+         if (*lb_for_new_rhs < total_product[k]) {
+            *lb_for_new_rhs = total_product[k];
+         }
+      }
+
+      FREE(col_ind_);
+      FREE(newlb_val_);
+      FREE(newlb_val_);
    }
 
    FREE(total_product);
    FREE(djs_ub_product);
    FREE(djs_lb_product);
    FREE(duals_rhs_product);
-
+   
 #else
 
    printf("get_coeff_from_dual_data():\n");
@@ -4618,6 +4705,10 @@ int collect_aux_data(warm_start_desc *ws, int num_rows, int num_cols,
         int *neg_djs_index_col = (int *) malloc(ISIZE * ws->num_leaf_nodes*num_cols);
         double *neg_djs_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_cols);
 
+        // YX: try store product of dual & lb/ub
+        double *pos_djs_p_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_cols);
+        double *neg_djs_p_val = (double *) malloc(DSIZE * ws->num_leaf_nodes*num_cols);
+
         int leaf_num = 0;
 
         //max_depth allocation for temporary bpath
@@ -4629,22 +4720,28 @@ int collect_aux_data(warm_start_desc *ws, int num_rows, int num_cols,
         int nnz_djs = 0;
         int nnz_pos_djs = 0;
         int nnz_neg_djs = 0;
+      //   get_leaf_node_data(ws->rootnode, bpath, ws->bpaths, ws->leaf_depth, &leaf_num,
+      //           ws->feasibility_status, ws->lower_bound,
+      //           duals_index_row, duals_index_col, duals_val, &nnz_duals,
+      //           djs_index_row, djs_index_col, djs_val, &nnz_djs,
+      //           pos_djs_index_row, pos_djs_index_col, pos_djs_val, &nnz_pos_djs,
+      //           neg_djs_index_row, neg_djs_index_col, neg_djs_val, &nnz_neg_djs,
+      //           num_rows, num_cols, sensitivity_rhs, sensitivity_bounds);
         get_leaf_node_data(ws->rootnode, bpath, ws->bpaths, ws->leaf_depth, &leaf_num,
                 ws->feasibility_status, ws->lower_bound,
                 duals_index_row, duals_index_col, duals_val, &nnz_duals,
                 djs_index_row, djs_index_col, djs_val, &nnz_djs,
-                pos_djs_index_row, pos_djs_index_col, pos_djs_val, &nnz_pos_djs,
+                pos_djs_index_row, pos_djs_index_col, pos_djs_val, &nnz_pos_djs, 
                 neg_djs_index_row, neg_djs_index_col, neg_djs_val, &nnz_neg_djs,
                 num_rows, num_cols, sensitivity_rhs, sensitivity_bounds);
-
         //assert that indeed all leaf nodes data is obtained
         assert(ws->num_leaf_nodes == leaf_num);
 
         //construct various coin packed matrices
         ws->duals_by_row = CoinPackedMatrix(false, duals_index_row,
                 duals_index_col, duals_val, nnz_duals);
-        ws->djs_by_row = CoinPackedMatrix(false, djs_index_row,
-                djs_index_col, djs_val, nnz_djs);
+      //   ws->djs_by_row = CoinPackedMatrix(false, djs_index_row,
+      //           djs_index_col, djs_val, nnz_djs);
         ws->pos_djs_by_row = CoinPackedMatrix(false, pos_djs_index_row,
                 pos_djs_index_col, pos_djs_val, nnz_pos_djs);
         ws->neg_djs_by_row = CoinPackedMatrix(false, neg_djs_index_row,

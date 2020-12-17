@@ -182,23 +182,34 @@ int main(int argc, char **argv)
    sym_get_matrix(env, &nz, matbeg, matind, matval);
 
    double *cutlhs = (double *) calloc(DSIZE, numcols);
-   int *numelems = (int *) malloc(ISIZE * numcols);
+   // YX: changed allocation style
+   // int *numelems = (int *) malloc(ISIZE * numcols);
    int **indices = (int **) malloc(sizeof(int *) * numcols);
    double **values = (double **) malloc(sizeof(double *) * numcols);
+   int *indices_arr = (int *)malloc(sizeof(int *) * nz);
+   double *values_arr = (double *)malloc(sizeof(double *) * nz);
+
+   memcpy(indices_arr, matind, ISIZE * nz);
+   memcpy(values_arr, matval, DSIZE * nz); 
 
    for (i = 0; i < numcols; i++) {
-      numelems[i] = matbeg[i+1] - matbeg[i];
-      indices[i] = (int *) malloc(ISIZE * numelems[i]);
-      values[i] = (double *) malloc(DSIZE * numelems[i]);
-      memcpy(indices[i], &matind[matbeg[i]], ISIZE * numelems[i]);
-      memcpy(values[i], &matval[matbeg[i]], DSIZE * numelems[i]);
+      // YX: changed allocation style
+      indices[i] = indices_arr + matbeg[i];
+      values[i] = values_arr + matbeg[i];
+      // numelems[i] = matbeg[i+1] - matbeg[i];
+      // indices[i] = (int *) malloc(ISIZE * numelems[i]);
+      // values[i] = (double *) malloc(DSIZE * numelems[i]);
+      // memcpy(indices[i], &matind[matbeg[i]], ISIZE * numelems[i]);
+      // memcpy(values[i], &matval[matbeg[i]], DSIZE * numelems[i]);
    }
+
    int colind;
    double col_val = 1;
 
    for (i = 0; i < numcols; i++) {
       colind = i;
-      sym_get_coeff_for_new_rhs(env, numelems[i], indices[i], values[i],
+      // sym_get_coeff_for_new_rhs(env, numelems[i], indices[i], values[i],
+      sym_get_coeff_for_new_rhs(env, matbeg[i+1] - matbeg[i], indices[i], values[i],
         1, &colind, &col_val, 1, &colind, &col_val, &cutlhs[i]);
    }
 
@@ -231,13 +242,13 @@ int main(int argc, char **argv)
 
    sym_get_rhs(env2, rhs);
    int *rhs_ind = (int *) malloc(ISIZE * numrows);
-   int *col_ind = (int *) malloc(ISIZE * numcols);
+   // int *col_ind = (int *) malloc(ISIZE * numcols);
    for (i = 0; i < numrows; i++) {
       rhs_ind[i] = i;
    }
-   for (i = 0; i < numcols; i++) {
-      col_ind[i] = i;
-   }
+   // for (i = 0; i < numcols; i++) {
+   //    col_ind[i] = i;
+   // }
    // Changing rhs such that it represents all "<=" type cons
    // coz SYMPHONY changed so in base instance solving!
    for (i = 0; i < numrows; i++) {
@@ -261,26 +272,53 @@ int main(int argc, char **argv)
    double *tempub_val = (double *) malloc(DSIZE * numcols);
    double temprhs;
    int k;
+   
+   int *col_ind_ub;
+   int *col_ind_lb;
+   double *templb_val2;
+   double *tempub_val2;
 
    for (i = 0; i < num_leaf_nodes; i++) {
-      memcpy(templb_val, newlb_val, DSIZE * numcols);
-      memcpy(tempub_val, newub_val, DSIZE * numcols);
+      // memcpy(templb_val, newlb_val, DSIZE * numcols);
+      // memcpy(tempub_val, newub_val, DSIZE * numcols);
+      col_ind_lb = (int *) calloc(lb_cnt[i], ISIZE);
+      col_ind_ub = (int *) calloc(ub_cnt[i], ISIZE);
+      templb_val2 = (double *) calloc(lb_cnt[i], DSIZE);
+      tempub_val2 = (double *) calloc(ub_cnt[i], DSIZE);
+      int counter_lb = 0;
+      int counter_ub = 0;
+      
       for (k = 0; k < lb_cnt[i]; k++) {
-         if (lb_val[i][k] >= templb_val[lb_ind[i][k]] + zerotol) {
-            templb_val[lb_ind[i][k]] = lb_val[i][k];
+         // if (lb_val[i][k] >= templb_val[lb_ind[i][k]] + zerotol) {
+         if (lb_val[i][k] >= newlb_val[lb_ind[i][k]] + zerotol) {
+            // templb_val[lb_ind[i][k]] = lb_val[i][k];
+            templb_val2[k] = lb_val[i][k] - newlb_val[lb_ind[i][k]];
+            col_ind_lb[k] = lb_ind[i][k];
+            counter_lb += 1;
          }
       }
       for (k = 0; k < ub_cnt[i]; k++) {
-         if (ub_val[i][k] <= tempub_val[ub_ind[i][k]] - zerotol) {
-            tempub_val[ub_ind[i][k]] = ub_val[i][k];
+         // if (ub_val[i][k] <= tempub_val[ub_ind[i][k]] - zerotol) {
+         if (ub_val[i][k] <= newub_val[ub_ind[i][k]] - zerotol) {
+            // tempub_val[ub_ind[i][k]] = ub_val[i][k];
+            tempub_val2[k] = ub_val[i][k] - newub_val[ub_ind[i][k]];
+            col_ind_ub[k] = ub_ind[i][k];
+            counter_ub += 1;
          }
       }
 
       sym_get_coeff_for_new_rhs(env, numrows, rhs_ind, rhs,
-            numcols, col_ind, templb_val, numcols, col_ind, tempub_val, &temprhs);
+            // numcols, col_ind, templb_val, numcols, col_ind, tempub_val, &temprhs);
+            counter_lb, col_ind_lb, templb_val2, counter_ub, col_ind_ub, tempub_val2, &temprhs);
 
       if (temprhs < cutrhs)
          cutrhs = temprhs;
+
+      free(col_ind_lb);
+      free(col_ind_ub);
+      free(templb_val2);
+      free(tempub_val2);
+
    }
    printf("Found cut RHS = %f\n\n", cutrhs);
    gettimeofday(&end_tval, NULL);
@@ -317,17 +355,20 @@ int main(int argc, char **argv)
    free(templb_val);
    free(newub_val);
    free(newlb_val);
-   free(col_ind);
+   // free(col_ind);
    free(rhs_ind);
    free(newrowval);
    free(newrowind);
-   for (i = 0; i < numcols; i++) {
-      free(values[i]);
-      free(indices[i]);
-   }
+   // YX: changed allocation style
+   // for (i = 0; i < numcols; i++) {
+   //    free(values[i]);
+   //    free(indices[i]);
+   // }
+   free(values_arr);
+   free(indices_arr);
    free(values);
    free(indices);
-   free(numelems);
+   // free(numelems);
    free(cutlhs);
    free(matval);
    free(matind);
